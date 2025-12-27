@@ -1,0 +1,420 @@
+// Prisma Schema for EasyISP Backend
+// Generated: December 27, 2025
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============ ENUMS ============
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+  TRIAL
+  EXPIRED
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  STAFF
+  CUSTOMER_CARE
+  FIELD_TECH
+  VIEWER
+}
+
+enum CustomerStatus {
+  ACTIVE
+  SUSPENDED
+  EXPIRED
+  DISABLED
+}
+
+enum ConnectionType {
+  PPPOE
+  HOTSPOT
+  DHCP
+  STATIC
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  MPESA
+  CASH
+  BANK_TRANSFER
+  CARD
+  OTHER
+}
+
+enum VoucherStatus {
+  AVAILABLE
+  USED
+  EXPIRED
+  REVOKED
+}
+
+enum NasStatus {
+  ONLINE
+  OFFLINE
+  PENDING
+  ERROR
+}
+
+// ============ MODELS ============
+
+model Tenant {
+  id            String       @id @default(uuid())
+  name          String       @unique
+  businessName  String
+  email         String
+  phone         String?
+  location      String?
+  logo          String?
+  status        TenantStatus @default(TRIAL)
+  walletBalance Float        @default(0)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  // Relations
+  users      User[]
+  customers  Customer[]
+  packages   Package[]
+  routers    NAS[]
+  vouchers   Voucher[]
+  payments   Payment[]
+  expenses   Expense[]
+  invoices   Invoice[]
+  smsLogs    SMSLog[]
+  auditLogs  AuditLog[]
+  accounts   ChartOfAccount[]
+
+  @@index([status])
+}
+
+model User {
+  id                 String     @id @default(uuid())
+  email              String     @unique
+  password           String
+  name               String
+  role               Role       @default(STAFF)
+  status             UserStatus @default(ACTIVE)
+  addedPermissions   String[]   @default([])
+  removedPermissions String[]   @default([])
+  tenantId           String
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  // Relations
+  tenant    Tenant     @relation(fields: [tenantId], references: [id])
+  auditLogs AuditLog[]
+
+  @@index([tenantId])
+  @@index([email])
+}
+
+model Customer {
+  id             String         @id @default(uuid())
+  username       String
+  password       String
+  name           String
+  email          String?
+  phone          String?
+  connectionType ConnectionType
+  status         CustomerStatus @default(ACTIVE)
+  expiresAt      DateTime
+  location       String?
+  latitude       Float?
+  longitude      Float?
+  apartmentNumber String?
+  houseNumber    String?
+  lastIp         String?
+  lastMac        String?
+  walletBalance  Float          @default(0)
+  totalSpent     Float          @default(0)
+  
+  // Soft delete
+  deletedAt      DateTime?
+
+  // Foreign keys
+  packageId String?
+  nasId     String?
+  tenantId  String
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  tenant   Tenant    @relation(fields: [tenantId], references: [id])
+  package  Package?  @relation(fields: [packageId], references: [id])
+  nas      NAS?      @relation(fields: [nasId], references: [id])
+  sessions Session[]
+  payments Payment[]
+  invoices Invoice[]
+
+  @@unique([username, tenantId])
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, connectionType])
+  @@index([tenantId, deletedAt])
+}
+
+model Package {
+  id            String         @id @default(uuid())
+  name          String
+  type          ConnectionType
+  price         Float
+  downloadSpeed Int            // Mbps
+  uploadSpeed   Int            // Mbps
+  burstDownload Int?           // Mbps
+  burstUpload   Int?           // Mbps
+  sessionTime   Int?           // Minutes (for hotspot)
+  dataLimit     BigInt?        // Bytes
+  isActive      Boolean        @default(true)
+  tenantId      String
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  // Relations
+  tenant    Tenant     @relation(fields: [tenantId], references: [id])
+  customers Customer[]
+  vouchers  Voucher[]
+  routers   PackageRouter[]
+
+  @@index([tenantId])
+  @@index([tenantId, type])
+}
+
+model PackageRouter {
+  id        String   @id @default(uuid())
+  packageId String
+  nasId     String
+  
+  package   Package  @relation(fields: [packageId], references: [id])
+  nas       NAS      @relation(fields: [nasId], references: [id])
+
+  @@unique([packageId, nasId])
+}
+
+model NAS {
+  id                String    @id @default(uuid())
+  name              String
+  ipAddress         String
+  secret            String    // RADIUS shared secret
+  coaPort           Int       @default(3799)
+  apiUsername       String?
+  apiPassword       String?
+  apiPort           Int       @default(8728)
+  boardName         String?
+  routerOsVersion   String?
+  status            NasStatus @default(PENDING)
+  cpuLoad           Int?
+  memoryUsage       Float?
+  memoryTotal       Float?
+  uptime            String?
+  lastSeen          DateTime?
+  tenantId          String
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  // Relations
+  tenant    Tenant          @relation(fields: [tenantId], references: [id])
+  customers Customer[]
+  sessions  Session[]
+  packages  PackageRouter[]
+
+  @@index([tenantId])
+  @@index([ipAddress])
+}
+
+model Session {
+  id            String   @id @default(uuid())
+  sessionId     String   @unique // RADIUS Acct-Session-Id
+  username      String
+  nasIpAddress  String
+  framedIp      String?
+  macAddress    String?
+  startTime     DateTime @default(now())
+  stopTime      DateTime?
+  inputOctets   BigInt   @default(0)
+  outputOctets  BigInt   @default(0)
+  sessionTime   Int      @default(0) // Seconds
+  terminateCause String?
+  
+  customerId    String?
+  nasId         String?
+  tenantId      String
+
+  // Relations
+  customer Customer? @relation(fields: [customerId], references: [id])
+  nas      NAS?      @relation(fields: [nasId], references: [id])
+
+  @@index([tenantId])
+  @@index([username])
+  @@index([nasId])
+  @@index([customerId])
+}
+
+model Voucher {
+  id        String        @id @default(uuid())
+  code      String
+  status    VoucherStatus @default(AVAILABLE)
+  usedAt    DateTime?
+  usedBy    String?       // Customer username
+  expiresAt DateTime?
+  packageId String
+  tenantId  String
+  batchId   String?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  // Relations
+  tenant  Tenant  @relation(fields: [tenantId], references: [id])
+  package Package @relation(fields: [packageId], references: [id])
+
+  @@unique([code, tenantId])
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([batchId])
+}
+
+model Payment {
+  id            String        @id @default(uuid())
+  amount        Float
+  method        PaymentMethod
+  status        PaymentStatus @default(PENDING)
+  transactionId String?       // M-Pesa or external ref
+  phone         String?
+  account       String?       // Username or account number
+  description   String?
+  customerId    String?
+  tenantId      String
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  // Relations
+  tenant   Tenant    @relation(fields: [tenantId], references: [id])
+  customer Customer? @relation(fields: [customerId], references: [id])
+
+  @@unique([transactionId])
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, createdAt])
+}
+
+model Expense {
+  id            String   @id @default(uuid())
+  description   String
+  category      String   // bandwidth, salaries, equipment, rent, etc.
+  vendor        String?
+  amount        Float
+  paymentMethod String?
+  isRecurring   Boolean  @default(false)
+  notes         String?
+  date          DateTime
+  tenantId      String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@index([tenantId, category])
+  @@index([tenantId, date])
+}
+
+model Invoice {
+  id          String   @id @default(uuid())
+  invoiceNo   String
+  amount      Float
+  status      String   @default("pending") // pending, paid, overdue, cancelled
+  dueDate     DateTime
+  paidAt      DateTime?
+  items       Json     // Array of line items
+  customerId  String?
+  tenantId    String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  tenant   Tenant    @relation(fields: [tenantId], references: [id])
+  customer Customer? @relation(fields: [customerId], references: [id])
+
+  @@unique([invoiceNo, tenantId])
+  @@index([tenantId])
+  @@index([tenantId, status])
+}
+
+model ChartOfAccount {
+  id          String   @id @default(uuid())
+  code        String
+  name        String
+  type        String   // Asset, Liability, Equity, Revenue, Expense
+  balance     Float    @default(0)
+  description String?
+  isSystem    Boolean  @default(false)
+  tenantId    String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([code, tenantId])
+  @@index([tenantId])
+}
+
+model SMSLog {
+  id        String   @id @default(uuid())
+  phone     String
+  message   String
+  status    String   // pending, sent, delivered, failed
+  provider  String
+  initiator String?  // What triggered the SMS
+  tenantId  String
+  createdAt DateTime @default(now())
+
+  // Relations
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@index([tenantId, createdAt])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  action     String   // CUSTOMER_CREATE, MAC_RESET, PAYMENT_REFUND, etc.
+  targetType String   // Customer, Payment, Router, etc.
+  targetId   String?
+  targetName String?
+  details    String?
+  ipAddress  String?
+  userId     String
+  tenantId   String
+  createdAt  DateTime @default(now())
+
+  // Relations
+  user   User   @relation(fields: [userId], references: [id])
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@index([userId])
+  @@index([tenantId, createdAt])
+}
