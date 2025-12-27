@@ -1,7 +1,9 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { hash, compare } from 'bcryptjs';
-import { sign } from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+const { hash, compare } = bcrypt;
+const { sign } = jwt;
 import { prisma } from '../lib/prisma.js';
 import { config } from '../lib/config.js';
 import { authMiddleware } from '../middleware/auth.js';

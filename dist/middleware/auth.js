@@ -1,4 +1,5 @@
-import { verify } from 'jsonwebtoken';
+import jwt from 'jsonwebtoken';
+const { verify } = jwt;
 import { config } from '../lib/config.js';
 import { prisma } from '../lib/prisma.js';
 import { AppError } from './errorHandler.js';
