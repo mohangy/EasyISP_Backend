@@ -1,0 +1,231 @@
+Introduction
+Last updated: 2021-09-23
+Effortlessly integrate your system with our Bulk SMS services using our user-friendly APIs. Our robust SMS gateway ensures fast and efficient message delivery to multiple recipients, allowing you to reach your audience quickly and effectively.
+
+API PARAMS:
+apikey : Valid API KEY. Get this by clicking the button above "GET API KEY & PARTNER ID" in your account.
+
+partnerID : Valid Partner ID. Get this by clicking the button above "GET API KEY & PARTNER ID" in your account.
+
+message : URL Encoded Text Message with valid GSM7 Characters.
+
+shortcode : Valid Sender ID / Shortcode.
+
+mobile : Valid Mobile Number.
+
+GET METHOD:
+API Endpoint url : https://isms.celcomafrica.com/api/services/sendsms/?
+
+Sample GET Request (PHP)
+
+        
+    $partnerID = "useraccountpartnerId";
+    $apikey = "useraccountapikey";
+    $shortcode = "INFOTEXT";
+
+    $mobile = "254712345678"; // Bulk messages can be comma separated
+    $message = "This is a test message + = # special characters @ _ -";
+
+    $finalURL = "https://isms.celcomafrica.com/api/services/sendsms/?apikey=" . urlencode($apikey) . "&partnerID=" .
+    urlencode($partnerID) . "&message=" . urlencode($message) . "&shortcode=$shortcode&mobile=$mobile";
+    $ch = curl_init();
+    \curl_setopt($ch, CURLOPT_URL, $finalURL);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    $response = curl_exec($ch);
+    curl_close($ch);
+    echo "Response: $response";
+    
+    
+POST METHOD
+API Endpoint url : https://isms.celcomafrica.com/api/services/sendsms/
+
+Sample Code for POST request in PHP
+
+    
+    $url = 'https://isms.celcomafrica.com/api/services/sendsms/';
+    $curl = curl_init();
+    curl_setopt($curl, CURLOPT_URL, $url);
+    curl_setopt($curl, CURLOPT_HTTPHEADER, array('Content-Type:application/json')); //setting custom header
+
+    $curl_post_data = array(
+
+    //Fill in the request parameters with valid values
+    'partnerID' => '00',
+    'apikey' => 'xxxxxxxxxxx',
+    'mobile' => '0712345678',
+    'message' => 'This is a test message',
+    'shortcode' => 'INFOTEXT',
+    'pass_type' => 'plain', //bm5 {base64 encode} or plain
+    );
+
+    $data_string = json_encode($curl_post_data);
+
+    curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($curl, CURLOPT_POST, true);
+    curl_setopt($curl, CURLOPT_POSTFIELDS, $data_string);
+
+    $curl_response = curl_exec($curl);
+    print_r($curl_response);
+    
+    
+Sample Response
+For a successfully sent message you get:
+
+    
+    {
+        "responses":[
+            {
+                "respose-code":200,
+                "response-description":"Success",
+                "mobile":254713482448,
+                "messageid":8290842,
+                "networkid":"1"
+            }
+        ]
+    }
+    
+    
+where 8290842 is the message id. This is the message id to use when querying delivery reports.
+
+Read API Response.
+Below is a sample code written in PHP.
+
+    
+    $response ='{
+        "responses":[
+            {
+                "respose-code":200,
+                "response-description":"Success",
+                "mobile":254713482448,
+                "messageid":8290842,
+                "networkid":"1"
+            },
+            {"respose-code":200,
+                "response-description":"Success",
+                "mobile":254713482448,
+                "messageid":8290843,
+                "networkid":"1"
+            }
+        ]
+    }';
+
+    $count = 0;
+
+    if ($response != null) {
+        $responseData = json_decode($response, TRUE);
+        foreach ($responseData as $responseItem) {
+            foreach ($responseItem as $smsdetails) {
+            $messageID = $responseData['responses'][$count]['messageid'];
+            $count++;
+        }
+      }
+    } else {
+         echo "Null Response";
+    }
+    
+    
+Scheduling Messages.
+For messages to be sent at a future time, you will need to pass an optional parameter 'timeToSend' with a valid date string that resolves to a Unix timestamp or the unix timestamp itself.
+
+    
+    {
+        "apikey":"123456789",
+        "partnerID":"123",
+        "message":"this is a test message",
+        "shortcode":"SENDERID",
+        "mobile":"254712345678",
+        "timeToSend":"2019-09-01 18:00"
+    }
+
+    
+    
+Getting Delivery Reports.
+API Endpoint url : https://isms.celcomafrica.com/api/services/getdlr/
+
+Example below is in PHP.
+
+    
+    $url = 'https://isms.celcomafrica.com/api/services/getdlr/';
+
+    $curl = curl_init();
+    curl_setopt($curl, CURLOPT_URL, $url);
+    curl_setopt($curl, CURLOPT_HTTPHEADER, array('Content-Type:application/json')); //setting custom header
+
+
+    $curl_post_data = array(
+    //Fill in the request parameters with valid values
+    'partnerID' => '00',
+    'apikey' => 'xxxxxxxxxxxxx',
+    'messageID' => '123456789',
+    );
+
+    $data_string = json_encode($curl_post_data);
+
+    curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($curl, CURLOPT_POST, true);
+    curl_setopt($curl, CURLOPT_POSTFIELDS, $data_string);
+
+    $curl_response = curl_exec($curl);
+    print_r($curl_response);
+    
+    
+Getting Account Balance.
+API Endpoint url : https://isms.celcomafrica.com/api/services/getbalance/
+
+Example below is in PHP.
+
+    
+    $url = 'https://isms.celcomafrica.com/api/services/getbalance/';
+
+    $curl = curl_init();
+    curl_setopt($curl, CURLOPT_URL, $url);
+    curl_setopt($curl, CURLOPT_HTTPHEADER, array('Content-Type:application/json')); //setting custom header
+
+
+    $curl_post_data = array(
+    //Fill in the request parameters with valid values
+    'partnerID' => '00',
+    'apikey' => 'xxxxxxxxxxxxx',
+    );
+
+    $data_string = json_encode($curl_post_data);
+
+    curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($curl, CURLOPT_POST, true);
+    curl_setopt($curl, CURLOPT_POSTFIELDS, $data_string);
+
+    $curl_response = curl_exec($curl);
+    print_r($curl_response);
+    
+    
+API Return codes / Description
+• 200: Successful Request all
+
+• 1001: Invalid sender id
+
+• 1002: Network not allowed
+
+• 1003: Invalid mobile number
+
+• 1004: Low bulk credits
+
+• 1005: Failed. System error
+
+• 1006: Invalid credentials
+
+• 1007: Failed. System error
+
+• 1008: No Delivery Report
+
+• 1009: unsupported data type
+
+• 1010: unsupported request type
+
+• 4090: Internal Error. Try again after 5 minutes
+
+• 4091: No Partner ID is Set
+
+• 4092: No API KEY Provided
+
+• 4093: Details Not Found

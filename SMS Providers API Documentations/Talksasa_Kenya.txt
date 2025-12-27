@@ -1,0 +1,157 @@
+Ladybird SMS Proxy
+Developer Documentation - Send SMS via Talksasa at 20/sec using your API key + Ladybird proxy key.
+
+Production Ready
+Get Started
+Live Status
+Quick Links
+1. Register Your Account
+2. Send SMS
+API Reference
+Rate Limits
+Webhook
+Laravel Integration
+Test It Live
+FAQ
+1. Register Your Account
+Register your Talksasa API key to receive a proxy_api_key for authentication.
+
+curl
+Copy
+curl -X POST https://ladybird.talksasa.com/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "dev@yourcompany.com",
+    "name": "Your App",
+    "talksasa_api_key": "434|ffP7WDIsA78BTzSQS61XNLHF3IBEHgHAd162pUYM54f4db0d"
+  }'
+Success Response
+JSON
+Copy
+{
+  "id": 42,
+  "email": "dev@yourcompany.com",
+  "proxy_api_key": "22|LIapOO3Erhm1zpeoLvEC77Rw40SaMwH6iPE3GxQk",
+  "message": "Registered! Use proxy_api_key for sends."
+}
+Save proxy_api_key — this is your secure token for all future API calls.
+
+2. Send SMS
+Use your proxy_api_key to send messages instantly.
+
+curl
+Copy
+curl -X POST https://ladybird.talksasa.com/send-sms \
+  -H "Authorization: Bearer 22|LIapOO3Erhm1zpeoLvEC77Rw40SaMwH6iPE3GxQk" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "recipient": "254712295880",
+    "sender_id": "YOUR_BRAND",
+    "type": "plain",
+    "message": "Hello from Ladybird!"
+  }'
+Or use X-API-Key header:
+
+Header
+Copy
+X-API-Key: 22|LIapOO3Erhm1zpeoLvEC77Rw40SaMwH6iPE3GxQk
+Success Response
+JSON
+Copy
+{
+  "status": "success",
+  "task_id": "80d02d84-bdb4-4ddf-a4da-977e54ae07e5"
+}
+API Reference
+POST /send-sms
+
+Field	Required	Description
+recipient	Yes	E.164: 2547...
+sender_id	Yes	Approved sender name
+type	Yes	plain only
+message	Yes	Max 160 chars
+Required Headers
+Headers
+Copy
+Authorization: Bearer YOUR_PROXY_API_KEY
+Content-Type: application/json
+Accept: application/json
+Rate Limits
+20 SMS per second per proxy_api_key
+
+Burst allowed. Excess messages are queued.
+
+Optional: Delivery Webhook
+Your Endpoint
+
+URL
+Copy
+https://yourapp.com/webhook/sms
+Ladybird Calls (GET)
+
+GET
+Copy
+https://yourapp.com/webhook/sms?
+  username=434|ffP7...&
+  action=delivery&
+  destination=254712295880&
+  status=Delivered&
+  message=&
+  reseller_id=42
+PHP Handler
+PHP
+Copy
+<?php
+if ($_GET['action'] !== 'delivery') {
+    http_response_code(400); exit;
+}
+
+$resellerId = (int)$_GET['reseller_id'];
+$status = $_GET['status'];
+$phone = $_GET['destination'];
+
+update_sms_status($Economy, $status);
+echo "OK";
+?>
+Laravel Integration
+1. Register (Admin)
+PHP
+Copy
+$response = Http::post('https://ladybird.talksasa.com/register', [
+    'email' => 'admin@yourapp.com',
+    'name' => 'Your App',
+    'talksasa_api_key' => '434|...'
+]);
+$proxyKey = $response->json('proxy_api_key');
+2. Send SMS
+PHP
+Copy
+Http::withHeaders([
+    'Authorization' => 'Bearer ' . $user->ladybird_proxy_key,
+    'Accept' => 'application/json',
+])->post('https://ladybird.talksasa.com/send-sms', [
+    'recipient' => $phone,
+    'sender_id' => $sender,
+    'type' => 'plain',
+    'message' => $message,
+]);
+Test It Live
+1. Register
+curl
+Copy
+curl -X POST https://ladybird.talksasa.com/register \
+  -d '{"email":"test@demo.com","name":"Test","talksasa_api_key":"YOUR_TALKSASA_KEY"}' \
+  -H "Content-Type: application/json"
+2. Send
+curl
+Copy
+curl -X POST https://ladybird.talksasa.com/send-sms \
+  -H "Authorization: Bearer YOUR_PROXY_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"recipient":"254712295880","sender_id":"TEST","type":"plain","message":"Hi!"}'
+FAQ
+Question	Answer
+Do I need a Talksasa account?	Yes — provide your API key during registration
+Multiple sender IDs?	Yes — if approved by Talksasa
+Rate limit exceeded?	Messages are queued and sent concurrently
+HTTPS required?	Yes — all endpoints are HTTPS-only

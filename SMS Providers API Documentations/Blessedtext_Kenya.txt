@@ -1,0 +1,137 @@
+Base URL:
+The base URL for making API calls is:
+
+https://sms.blessedtexts.com/api/sms/v1
+Send SMS
+To send messages, make a POST/GET Request to this API endpoint:
+
+https://sms.blessedtexts.com/api/sms/v1/sendsms
+Request Parameters
+Parameter	Type	Mandatory	Description
+api_key	String	Yes	Your API key. Get it from your Profile.
+sender_id	String	Yes	This must be a sender ID already assigned to you e.g. 23107
+message	String	Yes	The message to be sent to the recipient(s).
+NOTE: It is only mandatory if not sending multiple messages.
+phone	String	Yes	The phone number(s) to receive the message. It should be in any of the these formats; 722XXXXXX, 0722XXXXXX, or 254722XXXXXX. It can be one or many. If many, they should be comma-separated e.g. 254721XXXXXX,722XXXXXX,0723XXXXXX.
+NOTE: It is only mandatory if not sending multiple messages.
+messages	Array	Yes	This is only mandatory if sending different messages to different phone numbers (multiple messages in one request). Each item in the messages array should be an array of message and phone.
+attachment	File	No	Attachment (if any) to be included in the message.
+Sample POST Request
+POST https://sms.blessedtexts.com/api/sms/v1/sendsms
+Content-Type: application/json
+Accept: application/json
+{
+    "api_key":"YOUR_API_KEY",
+    "sender_id":"23107",
+    "message":"Hello world!",
+    "phone":"254721XXXXXX,254722XXXXXX"
+}
+Or when uploading an attachment
+POST https://sms.blessedtexts.com/api/sms/v1/sendsms
+Content-Type: multipart/form-data
+Accept: application/json
+{
+    "api_key":"YOUR_API_KEY",
+    "sender_id":"23107",
+    "message":"Hello world!",
+    "phone":"254721XXXXXX,254722XXXXXX",
+    "attachment":"@path/to/your/file"
+}
+Or when sending multiple messages
+POST https://sms.blessedtexts.com/api/sms/v1/sendsms
+Content-Type: application/json
+Accept: application/json
+{
+    "api_key":"YOUR_API_KEY",
+    "sender_id":"23107",
+    "messages":[
+            {
+                "phone": "254721XXXXXX",
+                "message": "Hello John"
+            },
+            {
+                "phone": "254722XXXXXX",
+                "message": "Hello Jane"
+            }
+    ]
+}
+Sample GET Request
+GET https://sms.blessedtexts.com/api/sms/v1/sendsms?api_key=YOUR_API_KEY&sender_id=23107&message=Hello&phone=254721XXXXXX
+Content-Type: application/json
+Accept: application/json
+Sample Response Body
+[
+    {
+        "status_code":"1000",
+        "status_desc":"Success",
+        "message_id":"6496cc3d541ef109508440",
+        "phone":"254722XXXXXX",
+        "message_cost": "0.5"
+    }
+]
+Get SMS Balance
+To get your account's SMS balance, make a POST/GET Request to this API endpoint:
+
+https://sms.blessedtexts.com/api/sms/v1/credit-balance
+Sample POST Request
+POST https://sms.blessedtexts.com/api/sms/v1/credit-balance
+Content-Type: application/json
+Accept: application/json
+{
+    "api_key":"YOUR_API_KEY"
+}
+Sample GET Request
+GET https://sms.blessedtexts.com/api/sms/v1/credit-balance?api_key=YOUR_API_KEY
+Content-Type: application/json
+Accept: application/json
+Sample Response Body
+{
+    "status_code":"1000",
+    "balance":"200"
+}
+Upload Contacts
+To upload contacts to your address book, make a POST/GET Request to this API endpoint:
+
+https://sms.blessedtexts.com/api/contacts/v1/upload
+Request Parameters
+Parameter	Type	Mandatory	Description
+api_key	String	Yes	Your API key. Get it from your Profile.
+contacts	Array	Yes	The array of all contact details you want to upload. Each item in the contacts array should be an array of phone number (mandatory), contact name (optional), and description (optional).
+group_id	Integer	No	If you want to upload contacts to your existing contacts group, specify its group id (Get this from your contacts groups table). If you want the system to automatically create a group for you, leave it blank.
+Sample POST Request
+POST https://sms.blessedtexts.com/api/contacts/v1/upload
+Content-Type: application/json
+Accept: application/json
+{
+    "api_key":"YOUR_API_KEY",
+    "contacts":[
+            {
+                "phone_number": "254721XXXXXX",
+                "contact_name": "John Doe", (optional)
+                "description": "Description goes here" (optional)
+            },
+            {
+                "phone_number": "254722XXXXXX",
+                "contact_name": "Jane Doe", (optional)
+                "description": "Description goes here" (optional)
+            }
+    ],
+    "group_id":"CONTACTS_GROUP_ID",
+}
+Sample Response Body
+{
+    "status_code":"1000",
+    "status_desc":"Success"
+}
+Response Status Codes
+Status Code	Status Description
+1000	Success
+1001	Missing API Key
+1002	Invalid API Key
+1003	Missing Sender ID
+1004	Invalid Sender ID
+1005	Missing Message
+1006	Missing Phone number
+1007	Invalid Phone numbers format
+1008	Invalid Phone number
+1009	Low bulk credits

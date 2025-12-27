@@ -1,0 +1,225 @@
+OAuth 2.0 API Endpoint
+https://portal.bytewavenetworks.coma/api/v3/
+
+HTTP API Endpoint
+https://portal.bytewavenetworks.coma/api/http/
+
+
+
+
+SMS API
+Bytewave Bulk SMS SMS API allows you to send and receive SMS messages to and from any country in the world through a REST API. Each message is identified by a unique random ID so that users can always check the status of a message using the given endpoint.
+API Endpoint
+
+Markup
+https://portal.bytewavenetworks.com/api/v3/sms/send
+Parameters
+Parameter	Required	Description
+Authorization	Yes	When calling our API, send your api token with the authentication type set as Bearer (Example: Authorization: Bearer {api_token})
+Accept	Yes	Set to application/json
+Send outbound SMS
+Bytewave Bulk SMS's Programmable SMS API enables you to programmatically send SMS messages from your web application. First, you need to create a new message object. Bytewave Bulk SMS returns the created message object with each request.
+
+Send your first SMS message with this example request.
+
+API Endpoint
+
+Markup
+https://portal.bytewavenetworks.com/api/v3/sms/send
+Parameters
+Parameter	Required	Type	Description
+recipient	Yes	string	Number to send message. Use comma (,) to send multiple numbers. Ex. 31612345678,8801721970168
+sender_id	Yes	string	The sender of the message. This can be a telephone number (including country code) or an alphanumeric string. In case of an alphanumeric string, the maximum length is 11 characters.
+type	Yes	string	The type of the message. For text message you have to insert plain as sms type.
+message	Yes	string	The body of the SMS message.
+schedule_time	No	datetime	The scheduled date and time of the message in RFC3339 format (Y-m-d H:i)
+dlt_template_id	No	string	The ID of your registered DLT (Distributed Ledger Technology) content template.
+Example request for Single Number
+PHP
+curl -X POST https://portal.bytewavenetworks.com/api/v3/sms/send \
+-H 'Authorization: Bearer 214|26vw8V9xE5bshPybiwDo1rzi0FYUrp0PgrSNuHKU2faac3e3' \
+-H 'Content-Type: application/json' \
+-H 'Accept: application/json' \
+-d '{
+"recipient":"31612345678",
+"sender_id":"YourName",
+"type":"plain",
+"message":"This is a test message"
+}'
+Example request for Multiple Numbers
+PHP
+curl -X POST https://portal.bytewavenetworks.com/api/v3/sms/send \
+-H 'Authorization: Bearer 214|26vw8V9xE5bshPybiwDo1rzi0FYUrp0PgrSNuHKU2faac3e3' \
+-H 'Content-Type: application/json' \
+-H 'Accept: application/json' \
+-d '{
+"recipient":"31612345678,880172145789",
+"sender_id":"YourName",
+"type":"plain",
+"message":"This is a test message",
+"schedule_time=2021-12-20 07:00"
+}'
+Returns
+Returns a contact object if the request was successful.
+
+JSON
+{
+    "status": "success",
+    "data": "sms reports with all details",
+}
+If the request failed, an error object will be returned.
+
+JSON
+{
+    "status": "error",
+    "message" : "A human-readable description of the error."
+}
+Send Campaign Using Contact list
+Bytewave Bulk SMS's Programmable SMS API enables you to programmatically send Campaigns from your web application. First, you need to create a new message object. Bytewave Bulk SMS returns the created message object with each request.
+
+Send your first Campaign Using Contact List with this example request.
+
+API Endpoint
+
+Markup
+https://portal.bytewavenetworks.com/api/v3/sms/campaign
+Parameters
+Parameter	Required	Type	Description
+contact_list_id	Yes	string	Contact list to send message. Use comma (,) to send multiple contact lists. Ex. 6415907d0d7a6,6415907d0d37a
+sender_id	Yes	string	The sender of the message. This can be a telephone number (including country code) or an alphanumeric string. In case of an alphanumeric string, the maximum length is 11 characters.
+type	Yes	string	The type of the message. For text message you have to insert plain as sms type.
+message	Yes	string	The body of the SMS message.
+schedule_time	No	datetime	The scheduled date and time of the message in RFC3339 format (Y-m-d H:i)
+dlt_template_id	No	string	The ID of your registered DLT (Distributed Ledger Technology) content template.
+Example request for Single Contact List
+PHP
+curl -X POST https://portal.bytewavenetworks.com/api/v3/sms/campaign \
+-H 'Authorization: Bearer 214|26vw8V9xE5bshPybiwDo1rzi0FYUrp0PgrSNuHKU2faac3e3' \
+-H 'Content-Type: application/json' \
+-H 'Accept: application/json' \
+-d '{
+"recipient":"6415907d0d37a",
+"sender_id":"YourName",
+"type":"plain",
+"message":"This is a test message"
+}'
+Example request for Multiple Contact Lists
+PHP
+curl -X POST https://portal.bytewavenetworks.com/api/v3/sms/campaign \
+-H 'Authorization: Bearer 214|26vw8V9xE5bshPybiwDo1rzi0FYUrp0PgrSNuHKU2faac3e3' \
+-H 'Content-Type: application/json' \
+-H 'Accept: application/json' \
+-d '{
+"recipient":"6415907d0d37a,6415907d0d7a6",
+"sender_id":"YourName",
+"type":"plain",
+"message":"This is a test message",
+"schedule_time=2021-12-20 07:00"
+}'
+Returns
+Returns a contact object if the request was successful.
+
+JSON
+{
+    "status": "success",
+    "data": "campaign reports with all details",
+}
+If the request failed, an error object will be returned.
+
+JSON
+{
+    "status": "error",
+    "message" : "A human-readable description of the error."
+}
+View an SMS
+You can use Bytewave Bulk SMS's SMS API to retrieve information of an existing inbound or outbound SMS message.
+
+You only need to supply the unique message id that was returned upon creation or receiving.
+
+API Endpoint
+
+Markup
+https://portal.bytewavenetworks.coma/api/v3/sms/{uid}
+Parameters
+Parameter	Required	Type	Description
+uid	Yes	string	A unique random uid which is created on the Bytewave Bulk SMS platform and is returned upon creation of the object.
+Example request
+PHP
+curl -X GET https://portal.bytewavenetworks.com/api/v3/sms/606812e63f78b \
+-H 'Authorization: Bearer 214|26vw8V9xE5bshPybiwDo1rzi0FYUrp0PgrSNuHKU2faac3e3' \
+-H 'Content-Type: application/json' \
+-H 'Accept: application/json' \
+Returns
+Returns a contact object if the request was successful.
+
+JSON
+{
+    "status": "success",
+    "data": "sms data with all details",
+}
+If the request failed, an error object will be returned.
+
+JSON
+{
+    "status": "error",
+    "message" : "A human-readable description of the error."
+}
+View all messages
+API Endpoint
+
+Markup
+https://portal.bytewavenetworks.coma/api/v3/sms/
+Example request
+PHP
+curl -X GET https://portal.bytewavenetworks.com/api/v3/sms \
+-H 'Authorization: Bearer 214|26vw8V9xE5bshPybiwDo1rzi0FYUrp0PgrSNuHKU2faac3e3' \
+-H 'Content-Type: application/json' \
+-H 'Accept: application/json' \
+Returns
+Returns a contact object if the request was successful.
+
+JSON
+{
+    "status": "success",
+    "data": "sms reports with pagination",
+}
+If the request failed, an error object will be returned.
+
+JSON
+{
+    "status": "error",
+    "message" : "A human-readable description of the error."
+}
+View Campaign
+You can use Bytewave Bulk SMS's Campaign API to retrieve information of an existing Campaigns.
+
+You only need to supply the unique campaign id that was returned upon creation or receiving.
+
+API Endpoint
+
+Markup
+https://portal.bytewavenetworks.coma/api/v3/campaign/{uid}
+Parameters
+Parameter	Required	Type	Description
+uid	Yes	string	A unique random uid which is created on the Bytewave Bulk SMS platform and is returned upon creation of the object.
+Example request
+PHP
+curl -X GET https://portal.bytewavenetworks.com/api/v3/campaign/606812e63f78b/view \
+-H 'Authorization: Bearer 214|26vw8V9xE5bshPybiwDo1rzi0FYUrp0PgrSNuHKU2faac3e3' \
+-H 'Content-Type: application/json' \
+-H 'Accept: application/json' \
+Returns
+Returns a contact object if the request was successful.
+
+JSON
+{
+    "status": "success",
+    "data": "campaign data with all details",
+}
+If the request failed, an error object will be returned.
+
+JSON
+{
+    "status": "error",
+    "message" : "A human-readable description of the error."
+}

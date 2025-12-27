@@ -1,0 +1,82 @@
+Send SMS Batch
+Send SMS Batch
+Send SMS Batch
+Send SMS in batches. You can send single SMS or comma separated mobile numbers.
+
+Country code is must for international messaging.
+
+API Supports both POST and GET method over HTTP protocol.
+ 
+
+Application API URL
+https://smsportal.hostpinnacle.co.ke/SMSApi/send
+ 
+
+API Parameters
+
+
+Key	Value	Description
+Login Credentials (Required Parameters)
+Authenticate your API request using userId-password or apiKey. You should use either one to authenticate your login.
+userId	Your Registered Username	The registered username parameter to be passed. You can use this if apiKey is not being used.
+password	Your password	The password needs to be urlencoded if there are any special characters used in the password field. You can use this if apiKey is not being used.
+apiKey	Your unique apiKey	apiKey needs to be sent as HTTP header when you are not using userId and password credentials. You can avail this from your user control panel and use instead of userId and password HTTP Request parameter. Please do not disclose this to anyone.
+Required Parameters
+sendMethod	quick	Method needs to be defined as quick to send SMS in batches.
+mobile	919999999999	Mobile with country code.
+msg	Hello World	Your message content.
+senderid	SENDER	Your registered and approved sender name,
+msgType	unicode|text	unicode for regional and text for English message content.
+output	plain|json|xml	Value for response format.
+
+System default is plain. If you need responses in json or xml then you have to give value as json or xml.
+Optional Parameters
+duplicatecheck	true|false	Enable to remove duplicate mobile numbers. Default is true.
+scheduleTime	Schedule Time	Date format YYYY-MM-DD HH:MM:SS
+trackLink	true|false	Enable true to track links from your SMS content.
+smartLinkTitle	Title for the link tracking	A brief title to recognise your smart link campaign.
+testMessage	true|false	Enable true to test your message and messages wont be delivered when enabled true.
+ 
+
+Sample Request Code
+<?php
+
+	$curl = curl_init();
+	curl_setopt_array($curl, array(
+		CURLOPT_URL => "https://smsportal.hostpinnacle.co.ke/SMSApi/send",
+		CURLOPT_RETURNTRANSFER => true,
+		CURLOPT_ENCODING => "",
+		CURLOPT_MAXREDIRS => 10,
+		CURLOPT_TIMEOUT => 30,
+		CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+		CURLOPT_CUSTOMREQUEST => "POST",
+		CURLOPT_POSTFIELDS => "userid=YourUsername&password=YourPassword&&sendMethod=quick&mobile=919999999999&msg=Hello+World&senderid=SENDER&msgType=text&duplicatecheck=true&output=json",
+		CURLOPT_HTTPHEADER => array(
+			"apikey: XXXXXXXXXXXXXXXXXXXX",
+			"cache-control: no-cache",
+			"content-type: application/x-www-form-urlencoded"
+		),
+	));
+
+	$response = curl_exec($curl);
+	$err = curl_error($curl);
+
+	curl_close($curl);
+
+	if ($err) {
+		echo "cURL Error #:" . $err;
+	} else {
+		echo $response;
+	}
+ 
+
+Sample Response Code
+{
+  "status": "success",
+  "mobile": "919999999999",
+  "invalidMobile": "",
+  "transactionId": "6305583318236810379",
+  "statusCode": "200",
+  "reason": "success"
+}
+ Quick Access

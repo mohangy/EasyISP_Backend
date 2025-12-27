@@ -1,0 +1,774 @@
+Bulk SMS API
+SMS API
+Our SMS platform allows for easy integration with various systems that would send single or bulk SMS and those messages can be automated, or tied to a trigger e.g. SMS alerts on transactions, booking confirmations, responding to customer queries and orders, then our SMS API would provide a seamless solution for that.
+
+Our SMS API Can:
+Send SMS immediately
+Connect to our SMS gateway
+Send single and bulk SMS
+Schedule SMS for a later date or time
+
+Manage SMS expiry times for time sensitive messages
+Provide delivery and status reports
+Create reply routes
+Send long messages (+160 characters)
+
+Bulk SMS API Integration For Developers
+With the Bulk SMS API, you can integrate your systems to automatically leverage on the instant
+delivery of SMS to generate receipts, alerts and relevant communications to your clients and
+customers.
+
+As a developer, the following two methods will greatly assist you to implement this service to
+your systems
+
+GET METHOD
+URL: https://sms.textsms.co.ke/api/services/sendsms/?
+
+GET PARAMS:
+apikey: Valid API KEY. Get this by clicking the button “GET API KEY & PARTNER ID” in your account.
+partnerID: Valid Partner ID. Get this by clicking the button “GET API KEY & PARTNER ID” in your account.
+message: URL Encoded Text Message with valid GSM7 Characters
+shortcode: Valid Sender ID / Shortcode
+mobile: Valid Mobile Number
+
+POST METHOD
+Request Endpoint: https://sms.textsms.co.ke/api/services/sendsms/
+
+SAMPLE REQUEST BODY
+ 
+{
+ "apikey":"123456789",
+ "partnerID":"123",
+ "message":"this is a test message",
+ "shortcode":"SENDERID",
+ "mobile":"254712345678"
+}
+SAMPLE RESPONSE
+For a successfully sent message you get:
+
+ 
+{
+ "responses": [
+	{
+ "respose-code": 200,
+ "response-description": "Success",
+ "mobile": 254712345678,
+ "messageid": 8290842,
+ "networkid": "1"
+	}
+		]
+ }
+ 
+
+
+SCHEDULING MESSAGES
+For messages to be sent at a future time, you will need to pass an optional parameter timeToSend
+with a valid date string that resolves to a Unix timestamp or the unix timestamp itself.
+
+ 
+ {
+ "apikey":"123456789",
+ "partnerID":"123",
+ "message":"this is a test message",
+ "shortcode":"SENDERID",
+ "mobile":"254712345678",
+ "timeToSend":"2019-09-01 18:00"
+}
+
+
+SENDING BULK MESSAGES
+You can now send up to 20 bulk messages in one single call by using our newest API endpoint:
+
+api url endpoint: https://sms.textsms.co.ke/api/services/sendbulk/
+
+Sample Request Body
+ 
+{
+ "count": 3,
+ "smslist": [
+ {
+ "partnerID": "12345",
+ "apikey": "6565b5a73b8221",
+ "pass_type": "plain",
+ "clientsmsid": 1234,
+ "mobile": "0733123456",
+ "message": "This is a test message 1",
+ "shortcode": "TextSMS"
+ },
+ {
+ "partnerID": "12346",
+ "apikey": "75465b5a73b8221",
+ "mobile": "0711123456",
+ "clientsmsid": 1235,
+ "message": "This is a test message 3",
+ "shortcode": "TextSMS",
+ "pass_type": "plain"
+ },
+ {
+ "partnerID": "123457",
+ "apikey": "sw23454t2xd24",
+ "mobile": "0755123456",
+ "clientsmsid": 1236,
+ "message": "This is a test message 2",
+ "shortcode": "TextSMS",
+ "pass_type": "plain"
+ }
+ ]
+}
+
+
+Sample Response:
+ 
+{
+ "responses": [
+ {
+ "respose-code": 200,
+ "response-description": "Success",
+ "mobile": "254733123456",
+ "messageid": 75085465,
+ "clientsmsid": "1234",
+ "networkid": "2"
+ },
+ {
+ "respose-code": 200,
+ "response-description": "Success",
+ "mobile": "254711123456",
+ "messageid": 75085466,
+ "clientsmsid": "1235",
+ "networkid": "1"
+ },
+ {
+ "respose-code": 1006,
+ "response-description": "Invalid credentials",
+ "mobile": "0755123456",
+ "partnerID": "1",
+ "shortcode": null,
+ "clientsmsid": "1236"
+ }
+ ]
+} 
+
+
+GETTING DELIVERY REPORTS
+endpoint url: https://sms.textsms.co.ke/api/services/getdlr/
+
+SAMPLE REQUEST BODY
+ 
+{
+ "apikey":"123456789",
+ "partnerID":"123",
+ "messageID":"123456789"
+}
+
+
+GETTING ACCOUNT BALANCE
+endpoint url: https://sms.textsms.co.ke/api/services/getbalanc
+ 
+{
+ "apikey":"123456789",
+ "partnerID":"123"
+}
+
+
+GETTING ACCOUNT BALANCE
+200;Successful Request Call
+1001;Invalid sender id
+1002;Network not allowed
+1003;Invalid mobile number
+1004;Low bulk credits
+1005;Failed. System error
+1006;Invalid credentials
+1007;Failed. System error
+1008;No Delivery Report
+1009;unsupported data type
+1010;unsupported request type
+4090;Internal Error. Try again after 5 minutes
+4091;No Partner ID is Set
+4092;No API KEY Provided
+4093;Details Not Found
+
+SMS SETUP AND SENDING SMS USING POSTMAN
+ 
+{
+	"info": {
+		"_postman_id": "e345ff2d-7ee5-4003-b14e-b8b12486ba3c",
+		"name": "TextSMS",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "auth",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"name": "Content-Type",
+						"type": "text",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{nt"secret":"{{secret}}",nt"username":"{{username}}",nt"pass_type":"plain"n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://{{domain}}/api/services/auth/",
+					"protocol": "https",
+					"host": [
+						"{{domain}}"
+					],
+					"path": [
+						"api",
+						"services",
+						"auth",
+						""
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "mnostatus",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							""
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"name": "Content-Type",
+						"type": "text",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://{{domain}}/api/services/mnostatus/",
+					"protocol": "https",
+					"host": [
+						"{{domain}}"
+					],
+					"path": [
+						"api",
+						"services",
+						"mnostatus",
+						""
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "sendBulk POST",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"name": "Content-Type",
+						"type": "text",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{n    "count": 1,n    "smslist": [n        {n            "partnerID": "{{partnerID}}",n            "apikey": "{{apikey}}",n            "pass_type": "plain",n            "clientsmsid": 1234,n            "mobile": "{{mobile}}",n            "message": "This is a test message 0",n            "shortcode": "{{shortcode}}"n        }n    ]n}"
+				},
+				"url": {
+					"raw": "https://{{domain}}/api/services/sendbulk/",
+					"protocol": "https",
+					"host": [
+						"{{domain}}"
+					],
+					"path": [
+						"api",
+						"services",
+						"sendbulk",
+						""
+					]
+				},
+				"description": "Send Bulk messages in one call."
+			},
+			"response": []
+		},
+		{
+			"name": "sendSMS POST",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"const dateNow= new Date();r",
+							"pm.environment.set('currentDate', dateNow.toString());"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"name": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{nt"apikey":"{{apikey}}",nt"partnerID":"{{partnerID}}",nt"mobile":"{{mobile}}",nt"message":"TESTING AT {{currentDate}}",nt"shortcode":"{{shortcode}}",nt"pass_type":"plain"n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://{{domain}}/api/services/sendsms/",
+					"protocol": "https",
+					"host": [
+						"{{domain}}"
+					],
+					"path": [
+						"api",
+						"services",
+						"sendsms",
+						""
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "sendSMS GET",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							"const dateNow= new Date();r",
+							"pm.environment.set('currentDate', dateNow.toISOString());"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Content-Type",
+						"name": "Content-Type",
+						"type": "text",
+						"value": "application/json"
+					}
+				],
+				"url": {
+					"raw": "https://{{domain}}/api/services/sendsms/?apikey={{ apikey }}&partnerID={{ partnerId }}&message=Test Message sent at {{currentDate}}&shortcode={{ shortcode }}&mobile={{ mobile }}",
+					"protocol": "https",
+					"host": [
+						"{{domain}}"
+					],
+					"path": [
+						"api",
+						"services",
+						"sendsms",
+						""
+					],
+					"query": [
+						{
+							"key": "apikey",
+							"value": "{{ apikey }}"
+						},
+						{
+							"key": "partnerID",
+							"value": "{{ partnerId }}"
+						},
+						{
+							"key": "message",
+							"value": "Test Message sent at {{currentDate}}"
+						},
+						{
+							"key": "shortcode",
+							"value": "{{ shortcode }}"
+						},
+						{
+							"key": "mobile",
+							"value": "{{ mobile }}"
+						},
+						{
+							"key": "timeToSend",
+							"value": "2020-02-12 11:49:00",
+							"disabled": true
+						}
+					]
+				}
+			},
+			"response": [
+				{
+					"name": "sendSMS-GET",
+					"originalRequest": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Content-Type",
+								"name": "Content-Type",
+								"type": "text",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "https://{{domain}}/api/services/sendsms/?apikey={{apikey}}&partnerID={{partnerID}}&message=Test Message&shortcode={{shortcode}}&mobile={{mobile}}",
+							"protocol": "https",
+							"host": [
+								"{{domain}}"
+							],
+							"path": [
+								"api",
+								"services",
+								"sendsms",
+								""
+							],
+							"query": [
+								{
+									"key": "apikey",
+									"value": "{{apikey}}"
+								},
+								{
+									"key": "partnerID",
+									"value": "{{partnerID}}"
+								},
+								{
+									"key": "message",
+									"value": "Test Message"
+								},
+								{
+									"key": "shortcode",
+									"value": "{{shortcode}}"
+								},
+								{
+									"key": "mobile",
+									"value": "{{mobile}}"
+								}
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{
+							"key": "Date",
+							"value": "Fri, 31 Jan 2020 09:46:22 GMT"
+						},
+						{
+							"key": "Server",
+							"value": "Apache"
+						},
+						{
+							"key": "X-Frame-Options",
+							"value": "sameorigin"
+						},
+						{
+							"key": "Strict-Transport-Security",
+							"value": "max-age=63072000; includeSubdomains;"
+						},
+						{
+							"key": "Content-Length",
+							"value": "130"
+						},
+						{
+							"key": "Keep-Alive",
+							"value": "timeout=5, max=100"
+						},
+						{
+							"key": "Connection",
+							"value": "Keep-Alive"
+						},
+						{
+							"key": "Content-Type",
+							"value": "application/json"
+						}
+					],
+					"cookie": [],
+					"body": "{n    "responses": [n        {n            "respose-code": 200,n            "response-description": "Success",n            "mobile": "254713482448",n            "messageid": 78726470,n            "networkid": "1"n        }n    ]n}"
+				}
+			]
+		},
+		{
+			"name": "getDLR POST",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"name": "Content-Type",
+						"type": "text",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{rnt"apikey":"{{apikey}}",rnt"partnerID":"{{partnerID}}",rn    "messageID":"95367513"rn}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://{{domain}}/api/services/getdlr/",
+					"protocol": "https",
+					"host": [
+						"{{domain}}"
+					],
+					"path": [
+						"api",
+						"services",
+						"getdlr",
+						""
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "getDLR GET",
+			"protocolProfileBehavior": {
+				"disableBodyPruning": true
+			},
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Content-Type",
+						"name": "Content-Type",
+						"type": "text",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": ""
+				},
+				"url": {
+					"raw": "https://{{domain}}/api/services/getdlr/?apikey={{apiKey}}&partnerID={{partnerID}}&messageID={{messageid}}",
+					"protocol": "https",
+					"host": [
+						"{{domain}}"
+					],
+					"path": [
+						"api",
+						"services",
+						"getdlr",
+						""
+					],
+					"query": [
+						{
+							"key": "apikey",
+							"value": "{{apiKey}}"
+						},
+						{
+							"key": "partnerID",
+							"value": "{{partnerID}}"
+						},
+						{
+							"key": "messageID",
+							"value": "{{messageid}}"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "checkAccountBalance POST",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"name": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{n  "apikey":"{{apikey}}",n  "partnerID":"{{partnerId}}"n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://{{domain}}/api/services/getbalance/",
+					"protocol": "https",
+					"host": [
+						"{{domain}}"
+					],
+					"path": [
+						"api",
+						"services",
+						"getbalance",
+						""
+					]
+				},
+				"description": "Check Account balance"
+			},
+			"response": [
+				{
+					"name": "checkAccountBalance POST",
+					"originalRequest": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"name": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{n  "apikey":"{{apikey}}",n  "partnerID":"{{partnerID}}"n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "https://{{domain}}/api/services/getbalance/",
+							"protocol": "https",
+							"host": [
+								"{{domain}}"
+							],
+							"path": [
+								"api",
+								"services",
+								"getbalance",
+								""
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{
+							"key": "Date",
+							"value": "Wed, 12 Feb 2020 10:37:53 GMT"
+						},
+						{
+							"key": "Server",
+							"value": "Apache"
+						},
+						{
+							"key": "X-Frame-Options",
+							"value": "sameorigin"
+						},
+						{
+							"key": "Strict-Transport-Security",
+							"value": "max-age=63072000; includeSubdomains;"
+						},
+						{
+							"key": "Content-Length",
+							"value": "64"
+						},
+						{
+							"key": "Keep-Alive",
+							"value": "timeout=5, max=100"
+						},
+						{
+							"key": "Connection",
+							"value": "Keep-Alive"
+						},
+						{
+							"key": "Content-Type",
+							"value": "application/json"
+						}
+					],
+					"cookie": [],
+					"body": "{n"
+				}
+			]
+		},
+		{
+			"name": "checkAccountBalance GET",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Content-Type",
+						"name": "Content-Type",
+						"type": "text",
+						"value": "application/json"
+					}
+				],
+				"url": {
+					"raw": "https://{{domain}}/api/services/getbalance/index.php?apikey={{apikey}}&partnerID={{partnerID}}",
+					"protocol": "https",
+					"host": [
+						"{{domain}}"
+					],
+					"path": [
+						"api",
+						"services",
+						"getbalance",
+						"index.php"
+					],
+					"query": [
+						{
+							"key": "apikey",
+							"value": "{{apikey}}"
+						},
+						{
+							"key": "partnerID",
+							"value": "{{partnerID}}"
+						}
+					]
+				},
+				"description": "Check Account balance"
+			},
+			"response": []
+		}
+	]
+}
+

@@ -1,0 +1,153 @@
+Bulk SMS API
+With the Bulk SMS API, you can integrate your systems to automatically leverage on the instant delivery of SMS to generate receipts, alerts and relevant communications to your clients and customers.
+
+As a developer, the following two methods will greatly assist you to implement this service to your systems.
+GET METHOD
+URL: https://quicksms.advantasms.com/api/services/sendsms/?
+GET PARAMS:
+apikey : Valide API KEY. Get this by clicking the button “GET API KEY & PARTNER ID” in your account.
+partnerID : Valid Partner ID. Get this by clicking the button “GET API KEY & PARTNER ID” in your account.
+message : URL Encoded Text Message with valid GSM7 Characters
+shortcode : Valid Sender ID / Shortcode
+mobile : Valid Mobile Number
+POST METHOD
+REQUEST ENDPOINT: https://quicksms.advantasms.com/api/services/sendsms/
+SAMPLE REQUEST BODY
+{
+  "apikey":"123456789",
+  "partnerID":"123",
+  "message":"this is a test message",
+  "shortcode":"SENDERID",
+  "mobile":"254712345678"
+}
+ For a successfully sent message you get:
+SAMPLE RESPONSE
+{
+    "responses": [
+        {
+            "respose-code": 200,
+            "response-description": "Success",
+            "mobile": 254712345678,
+            "messageid": 8290842,
+            "networkid": "1"
+        }
+    ]
+}
+SCHEDULING MESSAGES
+For messages to be sent at a future time, you will need to pass an optional parameter timeToSend with a valid date string that resolves to a Unix timestamp or the unix timestamp itself.
+
+
+{
+  "apikey":"123456789",
+  "partnerID":"123",
+  "message":"this is a test message",
+  "shortcode":"SENDERID",
+  "mobile":"254712345678",
+  "timeToSend":"2019-09-01 18:00"
+}
+SENDING BULK MESSAGES
+You can now send up to 20 bulk messages in one single call by using the our newest API endpoint:
+
+API URL ENDPOINT: : https://quicksms.advantasms.com/api/services/sendbulk/
+
+Sample Request Body
+
+
+{
+    "count": 3,
+    "smslist": [
+        {
+            "partnerID": "12345",
+            "apikey": "6565b5a73b8221",
+            "pass_type": "plain",
+            "clientsmsid": 1234,
+            "mobile": "0733123456",
+            "message": "This is a test message 1",
+            "shortcode": "Advanta"
+        },
+        {
+            "partnerID": "12346",
+            "apikey": "75465b5a73b8221",
+            "mobile": "0711123456",
+            "clientsmsid": 1235,
+            "message": "This is a test message 3",
+            "shortcode": "Advanta",
+            "pass_type": "plain"
+        },
+        {
+            "partnerID": "123457",
+            "apikey": "sw23454t2xd24",
+            "mobile": "0755123456",
+            "clientsmsid": 1236,
+            "message": "This is a test message 2",
+            "shortcode": "Advanta",
+            "pass_type": "plain"
+        }
+    ]
+}
+Sample Response:
+
+
+{
+    "responses": [
+        {
+            "respose-code": 200,
+            "response-description": "Success",
+            "mobile": "254733123456",
+            "messageid": 75085465,
+            "clientsmsid": "1234",
+            "networkid": "2"
+        },
+        {
+            "respose-code": 200,
+            "response-description": "Success",
+            "mobile": "254711123456",
+            "messageid": 75085466,
+            "clientsmsid": "1235",
+            "networkid": "1"
+        },
+        {
+            "respose-code": 1006,
+            "response-description": "Invalid credentials",
+            "mobile": "0755123456",
+            "partnerID": "1",
+            "shortcode": null,
+            "clientsmsid": "1236"
+        }
+    ]
+} 
+GETTING DELIVERY REPORTS
+ENDPOINT URL: https://quicksms.advantasms.com/api/services/getdlr/
+
+SAMPLE REQUEST BODY
+
+{
+  "apikey":"123456789",
+  "partnerID":"123",
+  "messageID":"123456789"
+}
+GETTING ACCOUNT BALANCE
+ENDPOINT URL: https://quicksms.advantasms.com/api/services/getbalance/
+
+SAMPLE REQUEST BODY
+
+{
+  "apikey":"123456789",
+  "partnerID":"123"
+}
+GETTING ACCOUNT BALANCE
+200;Successful Request Call
+1001;Invalid sender id
+1002;Network not allowed
+1003;Invalid mobile number
+1004;Low bulk credits
+1005;Failed. System error
+1006;Invalid credentials
+1007;Failed. System error
+1008;No Delivery Report
+1009;unsupported data type
+1010;unsupported request type
+4090;Internal Error. Try again after 5 minutes
+4091;No Partner ID is Set
+4092;No API KEY Provided
+4093;Details Not Found
