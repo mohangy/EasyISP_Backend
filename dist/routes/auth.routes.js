@@ -44,7 +44,8 @@ authRoutes.post('/login', async (c) => {
     if (user.tenant.status !== 'ACTIVE' && user.tenant.status !== 'TRIAL') {
         throw new AppError(403, 'Tenant account is suspended or expired');
     }
-    const token = sign({ userId: user.id, tenantId: user.tenantId }, config.jwtSecret, { expiresIn: config.jwtExpiresIn });
+    const token = sign({ userId: user.id, tenantId: user.tenantId }, config.jwtSecret, { expiresIn: 60 * 60 * 24 * 7 } // 7 days in seconds
+    );
     return c.json({
         user: {
             id: user.id,
@@ -92,7 +93,8 @@ authRoutes.post('/register', async (c) => {
         });
         return { tenant, user };
     });
-    const token = sign({ userId: result.user.id, tenantId: result.tenant.id }, config.jwtSecret, { expiresIn: config.jwtExpiresIn });
+    const token = sign({ userId: result.user.id, tenantId: result.tenant.id }, config.jwtSecret, { expiresIn: 60 * 60 * 24 * 7 } // 7 days in seconds
+    );
     return c.json({
         user: {
             id: result.user.id,

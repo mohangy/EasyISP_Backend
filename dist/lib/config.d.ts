@@ -9,7 +9,7 @@ export declare const config: {
     readonly jwtSecret: string;
     readonly jwtExpiresIn: string;
     readonly queueDriver: "pgboss" | "redis";
-    readonly redisUrl: string | undefined;
+    readonly redisUrl: string;
     readonly mpesa: {
         readonly env: "sandbox" | "production";
         readonly consumerKey: string;
@@ -26,7 +26,7 @@ export declare const config: {
     };
     readonly corsOrigins: string[];
     readonly logLevel: string;
-    readonly sentryDsn: string | undefined;
+    readonly sentryDsn: string;
 };
 export type Config = typeof config;
 //# sourceMappingURL=config.d.ts.map

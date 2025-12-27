@@ -58,7 +58,7 @@ authRoutes.post('/login', async (c) => {
     const token = sign(
         { userId: user.id, tenantId: user.tenantId },
         config.jwtSecret,
-        { expiresIn: config.jwtExpiresIn }
+        { expiresIn: 60 * 60 * 24 * 7 } // 7 days in seconds
     );
 
     return c.json({
@@ -118,7 +118,7 @@ authRoutes.post('/register', async (c) => {
     const token = sign(
         { userId: result.user.id, tenantId: result.tenant.id },
         config.jwtSecret,
-        { expiresIn: config.jwtExpiresIn }
+        { expiresIn: 60 * 60 * 24 * 7 } // 7 days in seconds
     );
 
     return c.json(

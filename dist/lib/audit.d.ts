@@ -24,8 +24,8 @@ export declare function getOperatorAuditLogs(operatorId: string, tenantId: strin
         id: string;
         action: string;
         targetType: string;
-        targetName: string | null;
-        details: string | null;
+        targetName: string;
+        details: string;
         timestamp: Date;
     }[];
     total: number;
@@ -44,9 +44,9 @@ export declare function getTenantAuditLogs(tenantId: string, options?: {
         id: string;
         action: string;
         targetType: string;
-        targetId: string | null;
-        targetName: string | null;
-        details: string | null;
+        targetId: string;
+        targetName: string;
+        details: string;
         timestamp: Date;
         operator: {
             name: string;

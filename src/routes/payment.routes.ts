@@ -89,9 +89,11 @@ authenticatedRoutes.get('/manual', async (c) => {
     const page = parseInt(c.req.query('page') ?? '1');
     const pageSize = parseInt(c.req.query('pageSize') ?? '20');
 
+    const manualMethods = ['CASH', 'BANK_TRANSFER', 'CARD', 'OTHER'] as ('CASH' | 'BANK_TRANSFER' | 'CARD' | 'OTHER')[];
+
     const where = {
         tenantId,
-        method: { in: ['CASH', 'BANK_TRANSFER', 'CARD', 'OTHER'] as const },
+        method: { in: manualMethods },
     };
 
     const [transactions, total] = await Promise.all([
@@ -189,11 +191,13 @@ authenticatedRoutes.delete('/manual', async (c) => {
         throw new AppError(403, 'Only admins can clear payment records');
     }
 
+    const manualMethods = ['CASH', 'BANK_TRANSFER', 'CARD', 'OTHER'] as ('CASH' | 'BANK_TRANSFER' | 'CARD' | 'OTHER')[];
+
     // Soft delete by updating status
     const result = await prisma.payment.updateMany({
         where: {
             tenantId,
-            method: { in: ['CASH', 'BANK_TRANSFER', 'CARD', 'OTHER'] },
+            method: { in: manualMethods },
         },
         data: { status: 'REFUNDED' }, // Mark as refunded/cleared
     });
