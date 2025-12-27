@@ -1,10 +1,11 @@
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { logger as honoLogger } from 'hono/logger';
 import { secureHeaders } from 'hono/secure-headers';
 import { config } from './lib/config.js';
 import { logger } from './lib/logger.js';
+import { serviceManager } from './lib/serviceManager.js';
+import { requestLogger } from './middleware/requestLogger.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { authRoutes } from './routes/auth.routes.js';
 import { healthRoutes } from './routes/health.routes.js';
@@ -32,10 +33,12 @@ const app = new Hono();
 
 // Global middleware
 app.use('*', secureHeaders());
-app.use('*', honoLogger());
+app.use('*', requestLogger()); // Comprehensive request logging
 app.use('*', cors({
     origin: config.corsOrigins,
     credentials: true,
+    allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
 }));
 
 // Error handler
@@ -74,26 +77,37 @@ app.notFound((c) => {
     return c.json({ error: 'Not Found', statusCode: 404 }, 404);
 });
 
-// Start server
-const port = config.port;
-logger.info({ port, env: config.env }, 'Starting EasyISP Backend');
+// Start services and server
+const start = async () => {
+    try {
+        // Start all services (Database, Queue, RADIUS)
+        await serviceManager.startAll();
 
-serve({
-    fetch: app.fetch,
-    port,
-}, (info) => {
-    logger.info(`🚀 Server running at http://localhost:${info.port}`);
-});
+        const port = config.port;
+
+        serve({
+            fetch: app.fetch,
+            port,
+        }, (info) => {
+            logger.info(`🚀 API Server running at http://localhost:${info.port}`);
+        });
+
+    } catch (error) {
+        logger.error({ error }, 'Failed to start application');
+        process.exit(1);
+    }
+};
+
+start();
 
 // Graceful shutdown
-process.on('SIGTERM', () => {
-    logger.info('SIGTERM received, shutting down gracefully');
+const shutdown = async (signal: string) => {
+    logger.info(`${signal} received, shutting down gracefully`);
+    await serviceManager.stopAll();
     process.exit(0);
-});
+};
 
-process.on('SIGINT', () => {
-    logger.info('SIGINT received, shutting down gracefully');
-    process.exit(0);
-});
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 
 export default app;
