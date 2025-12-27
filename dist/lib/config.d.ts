@@ -1,4 +1,3 @@
-import 'dotenv/config';
 export declare const config: {
     readonly env: string;
     readonly isDev: boolean;

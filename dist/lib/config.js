@@ -1,4 +1,17 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
+import path from 'path';
+// Debug: Log startup directory
+console.log(`[Config] CWD: ${process.cwd()}`);
+const envPath = path.resolve(process.cwd(), '.env');
+console.log(`[Config] Loading .env from: ${envPath}`);
+// Load .env explicitly
+const result = dotenv.config({ path: envPath });
+if (result.error) {
+    console.warn(`[Config] Warning: Failed to load .env file: ${result.error.message}`);
+}
+else {
+    console.log('[Config] .env loaded successfully');
+}
 function getEnv(key, defaultValue) {
     const value = process.env[key];
     if (value === undefined) {
