@@ -3,7 +3,8 @@ import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { authMiddleware, requireRole } from '../middleware/auth.js';
 import { AppError } from '../middleware/errorHandler.js';
-import { hash } from 'bcryptjs';
+import bcrypt from 'bcryptjs';
+const { hash } = bcrypt;
 
 export const tenantRoutes = new Hono();
 
