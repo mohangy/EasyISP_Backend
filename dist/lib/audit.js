@@ -1,55 +1,8 @@
 import { prisma } from './prisma.js';
-import type { AuthUser } from '../middleware/auth.js';
-
-export type AuditAction =
-    | 'LOGIN'
-    | 'LOGOUT'
-    | 'TENANT_CREATE'
-    | 'TENANT_UPDATE'
-    | 'OPERATOR_CREATE'
-    | 'OPERATOR_UPDATE'
-    | 'OPERATOR_DELETE'
-    | 'PASSWORD_RESET'
-    | 'PASSWORD_CHANGE'
-    | 'CUSTOMER_CREATE'
-    | 'CUSTOMER_UPDATE'
-    | 'CUSTOMER_DELETE'
-    | 'MAC_RESET'
-    | 'CUSTOMER_DISCONNECT'
-    | 'CUSTOMER_SUSPEND'
-    | 'CUSTOMER_ACTIVATE'
-    | 'PACKAGE_CHANGE'
-    | 'EXPIRY_UPDATE'
-    | 'MANUAL_RECHARGE'
-    | 'PAYMENT_PROCESS'
-    | 'PAYMENT_REFUND'
-    | 'ROUTER_CREATE'
-    | 'ROUTER_UPDATE'
-    | 'ROUTER_DELETE'
-    | 'ROUTER_REBOOT'
-    | 'VOUCHER_GENERATE'
-    | 'VOUCHER_DELETE'
-    | 'SMS_SEND'
-    | 'SETTINGS_UPDATE'
-    | 'VPN_PEER_CREATE'
-    | 'VPN_PEER_DELETE'
-    | 'VPN_PEER_ENABLE'
-    | 'VPN_PEER_DISABLE';
-
-export interface AuditLogParams {
-    action: AuditAction;
-    targetType: string;
-    targetId?: string;
-    targetName?: string;
-    details?: string;
-    ipAddress?: string;
-    user: AuthUser;
-}
-
 /**
  * Create an audit log entry
  */
-export async function createAuditLog(params: AuditLogParams): Promise<void> {
+export async function createAuditLog(params) {
     try {
         await prisma.auditLog.create({
             data: {
@@ -63,24 +16,19 @@ export async function createAuditLog(params: AuditLogParams): Promise<void> {
                 tenantId: params.user.tenantId,
             },
         });
-    } catch (error) {
+    }
+    catch (error) {
         // Log to console but don't fail the main operation
         console.error('Failed to create audit log:', error);
     }
 }
-
 /**
  * Get audit logs for a specific operator
  */
-export async function getOperatorAuditLogs(
-    operatorId: string,
-    tenantId: string,
-    options: { page?: number; pageSize?: number } = {}
-) {
+export async function getOperatorAuditLogs(operatorId, tenantId, options = {}) {
     const page = options.page ?? 1;
     const pageSize = options.pageSize ?? 10;
     const skip = (page - 1) * pageSize;
-
     const [logs, total] = await Promise.all([
         prisma.auditLog.findMany({
             where: { userId: operatorId, tenantId },
@@ -98,7 +46,6 @@ export async function getOperatorAuditLogs(
         }),
         prisma.auditLog.count({ where: { userId: operatorId, tenantId } }),
     ]);
-
     return {
         logs: logs.map((log) => ({
             id: log.id,
@@ -113,23 +60,17 @@ export async function getOperatorAuditLogs(
         pageSize,
     };
 }
-
 /**
  * Get all audit logs for a tenant
  */
-export async function getTenantAuditLogs(
-    tenantId: string,
-    options: { page?: number; pageSize?: number; action?: string } = {}
-) {
+export async function getTenantAuditLogs(tenantId, options = {}) {
     const page = options.page ?? 1;
     const pageSize = options.pageSize ?? 20;
     const skip = (page - 1) * pageSize;
-
-    const where: { tenantId: string; action?: string } = { tenantId };
+    const where = { tenantId };
     if (options.action) {
         where.action = options.action;
     }
-
     const [logs, total] = await Promise.all([
         prisma.auditLog.findMany({
             where,
@@ -144,7 +85,6 @@ export async function getTenantAuditLogs(
         }),
         prisma.auditLog.count({ where }),
     ]);
-
     return {
         logs: logs.map((log) => ({
             id: log.id,
@@ -164,3 +104,4 @@ export async function getTenantAuditLogs(
         pageSize,
     };
 }
+//# sourceMappingURL=audit.js.map

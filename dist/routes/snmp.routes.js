@@ -3,16 +3,12 @@ import { prisma } from '../lib/prisma.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../lib/logger.js';
-
 export const snmpRoutes = new Hono();
-
 // Apply auth middleware to all routes
 snmpRoutes.use('*', authMiddleware);
-
 // GET /api/snmp/status - Get SNMP polling status
 snmpRoutes.get('/status', async (c) => {
     const tenantId = c.get('tenantId');
-
     // Get NAS devices with SNMP enabled
     const nasDevices = await prisma.nAS.findMany({
         where: { tenantId },
@@ -24,7 +20,6 @@ snmpRoutes.get('/status', async (c) => {
             lastSeen: true,
         },
     });
-
     return c.json({
         enabled: true,
         pollInterval: parseInt(process.env['SNMP_POLL_INTERVAL'] ?? '60'),
@@ -43,23 +38,18 @@ snmpRoutes.get('/status', async (c) => {
         },
     });
 });
-
 // GET /api/snmp/poll/:nasId - Poll specific device
 snmpRoutes.get('/poll/:nasId', async (c) => {
     const tenantId = c.get('tenantId');
     const nasId = c.req.param('nasId');
-
     const nas = await prisma.nAS.findFirst({
         where: { id: nasId, tenantId },
     });
-
     if (!nas) {
         throw new AppError(404, 'Device not found');
     }
-
     // TODO: Implement actual SNMP polling
     // This would use net-snmp library to poll the device
-
     // For now, return mock/stored data
     const mockData = {
         system: {
@@ -78,13 +68,11 @@ snmpRoutes.get('/poll/:nasId', async (c) => {
             percent: nas.memoryTotal ? Math.round((nas.memoryUsage ?? 0) / nas.memoryTotal * 100) : 0,
         },
     };
-
     // Update last seen
     await prisma.nAS.update({
         where: { id: nasId },
         data: { lastSeen: new Date() },
     });
-
     return c.json({
         nasId: nas.id,
         nasName: nas.name,
@@ -92,12 +80,10 @@ snmpRoutes.get('/poll/:nasId', async (c) => {
         data: mockData,
     });
 });
-
 // GET /api/snmp/metrics - Get aggregated metrics
 snmpRoutes.get('/metrics', async (c) => {
     const tenantId = c.get('tenantId');
     const period = c.req.query('period') ?? '1h'; // 1h, 24h, 7d, 30d
-
     // Get all NAS devices
     const nasDevices = await prisma.nAS.findMany({
         where: { tenantId },
@@ -109,15 +95,12 @@ snmpRoutes.get('/metrics', async (c) => {
             memoryTotal: true,
         },
     });
-
     // Calculate aggregated metrics
     const totalCpu = nasDevices.reduce((sum, d) => sum + (d.cpuLoad ?? 0), 0);
     const avgCpu = nasDevices.length > 0 ? Math.round(totalCpu / nasDevices.length) : 0;
-
     const totalMemUsed = nasDevices.reduce((sum, d) => sum + (d.memoryUsage ?? 0), 0);
     const totalMemTotal = nasDevices.reduce((sum, d) => sum + (d.memoryTotal ?? 0), 0);
     const avgMemPercent = totalMemTotal > 0 ? Math.round((totalMemUsed / totalMemTotal) * 100) : 0;
-
     return c.json({
         period,
         deviceCount: nasDevices.length,
@@ -135,26 +118,20 @@ snmpRoutes.get('/metrics', async (c) => {
         })),
     });
 });
-
 // POST /api/snmp/settings - Update SNMP settings for a device
 snmpRoutes.post('/settings', async (c) => {
     const tenantId = c.get('tenantId');
     const body = await c.req.json();
     const { nasId, community, version, port } = body;
-
     const nas = await prisma.nAS.findFirst({
         where: { id: nasId, tenantId },
     });
-
     if (!nas) {
         throw new AppError(404, 'Device not found');
     }
-
     // TODO: Store SNMP settings (would need to add fields to NAS model)
     // For now, just acknowledge
-
     logger.info({ nasId, version }, 'SNMP settings updated');
-
     return c.json({
         success: true,
         nasId,
@@ -165,11 +142,9 @@ snmpRoutes.post('/settings', async (c) => {
         },
     });
 });
-
 // GET /api/snmp/alerts - Get SNMP-based alerts
 snmpRoutes.get('/alerts', async (c) => {
     const tenantId = c.get('tenantId');
-
     // Get devices with potential issues
     const nasDevices = await prisma.nAS.findMany({
         where: { tenantId },
@@ -183,14 +158,7 @@ snmpRoutes.get('/alerts', async (c) => {
             lastSeen: true,
         },
     });
-
-    const alerts: Array<{
-        severity: 'critical' | 'warning' | 'info';
-        device: string;
-        message: string;
-        timestamp: Date;
-    }> = [];
-
+    const alerts = [];
     for (const nas of nasDevices) {
         // Offline device
         if (nas.status === 'OFFLINE') {
@@ -201,7 +169,6 @@ snmpRoutes.get('/alerts', async (c) => {
                 timestamp: nas.lastSeen ?? new Date(),
             });
         }
-
         // High CPU
         if (nas.cpuLoad && nas.cpuLoad > 90) {
             alerts.push({
@@ -211,7 +178,6 @@ snmpRoutes.get('/alerts', async (c) => {
                 timestamp: new Date(),
             });
         }
-
         // High memory
         const memPercent = nas.memoryTotal
             ? Math.round((nas.memoryUsage ?? 0) / nas.memoryTotal * 100)
@@ -224,7 +190,6 @@ snmpRoutes.get('/alerts', async (c) => {
                 timestamp: new Date(),
             });
         }
-
         // Not seen recently (> 5 minutes)
         if (nas.lastSeen && (Date.now() - nas.lastSeen.getTime()) > 5 * 60 * 1000) {
             alerts.push({
@@ -235,7 +200,6 @@ snmpRoutes.get('/alerts', async (c) => {
             });
         }
     }
-
     return c.json({
         alerts: alerts.sort((a, b) => {
             const severityOrder = { critical: 0, warning: 1, info: 2 };
@@ -248,3 +212,4 @@ snmpRoutes.get('/alerts', async (c) => {
         },
     });
 });
+//# sourceMappingURL=snmp.routes.js.map

@@ -2,19 +2,14 @@ import { Hono } from 'hono';
 import { prisma } from '../lib/prisma.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../lib/logger.js';
-
 export const portalRoutes = new Hono();
-
 // These routes are mostly public for hotspot portal access
-
 // GET /api/portal/packages - Get available packages for portal
 portalRoutes.get('/packages', async (c) => {
     const tenantId = c.req.query('tenantId');
-
     if (!tenantId) {
         throw new AppError(400, 'Tenant ID required');
     }
-
     const packages = await prisma.package.findMany({
         where: {
             tenantId,
@@ -32,9 +27,8 @@ portalRoutes.get('/packages', async (c) => {
         },
         orderBy: { price: 'asc' },
     });
-
     return c.json({
-        packages: packages.map((p: { id: string; name: string; price: number; downloadSpeed: number; uploadSpeed: number; sessionTime: number | null; dataLimit: bigint | null }) => ({
+        packages: packages.map((p) => ({
             id: p.id,
             name: p.name,
             price: p.price,
@@ -44,16 +38,13 @@ portalRoutes.get('/packages', async (c) => {
         })),
     });
 });
-
 // POST /api/portal/login - Hotspot login
 portalRoutes.post('/login', async (c) => {
     const body = await c.req.json();
     const { username, password, nasId, macAddress, ip } = body;
-
     if (!username || !password) {
         throw new AppError(400, 'Username and password required');
     }
-
     // Find customer
     const customer = await prisma.customer.findFirst({
         where: {
@@ -68,24 +59,19 @@ portalRoutes.post('/login', async (c) => {
             tenant: { select: { id: true, name: true } },
         },
     });
-
     if (!customer) {
         throw new AppError(401, 'Invalid credentials');
     }
-
     // Check if customer is active
     if (customer.status !== 'ACTIVE') {
         throw new AppError(403, `Account ${customer.status.toLowerCase()}`);
     }
-
     // Check expiry
     if (customer.expiresAt && customer.expiresAt < new Date()) {
         throw new AppError(403, 'Subscription expired');
     }
-
     // TODO: Verify password (would need password field or RADIUS auth)
     // For now, just check if password matches username or phone (for demo)
-
     // Create or update session
     const session = await prisma.session.create({
         data: {
@@ -100,9 +86,7 @@ portalRoutes.post('/login', async (c) => {
             tenantId: customer.tenantId,
         },
     });
-
     logger.info({ username, sessionId: session.sessionId }, 'Hotspot login successful');
-
     return c.json({
         success: true,
         sessionId: session.sessionId,
@@ -118,12 +102,10 @@ portalRoutes.post('/login', async (c) => {
         } : null,
     });
 });
-
 // POST /api/portal/logout - Hotspot logout
 portalRoutes.post('/logout', async (c) => {
     const body = await c.req.json();
     const { sessionId, username, macAddress } = body;
-
     const session = await prisma.session.findFirst({
         where: {
             OR: [
@@ -134,11 +116,9 @@ portalRoutes.post('/logout', async (c) => {
             stopTime: null,
         },
     });
-
     if (!session) {
         throw new AppError(404, 'Session not found');
     }
-
     await prisma.session.update({
         where: { id: session.id },
         data: {
@@ -146,19 +126,15 @@ portalRoutes.post('/logout', async (c) => {
             terminateCause: 'User-Logout',
         },
     });
-
     return c.json({ success: true });
 });
-
 // GET /api/portal/status - Get session status
 portalRoutes.get('/status', async (c) => {
     const sessionId = c.req.query('sessionId');
     const macAddress = c.req.query('mac');
-
     if (!sessionId && !macAddress) {
         throw new AppError(400, 'Session ID or MAC address required');
     }
-
     const session = await prisma.session.findFirst({
         where: {
             OR: [
@@ -173,13 +149,10 @@ portalRoutes.get('/status', async (c) => {
             },
         },
     });
-
     if (!session) {
         return c.json({ active: false });
     }
-
     const uptime = Math.floor((Date.now() - session.startTime.getTime()) / 1000);
-
     return c.json({
         active: true,
         sessionId: session.sessionId,
@@ -193,28 +166,22 @@ portalRoutes.get('/status', async (c) => {
         } : null,
     });
 });
-
 // POST /api/portal/voucher - Redeem voucher from portal
 portalRoutes.post('/voucher', async (c) => {
     const body = await c.req.json();
     const { code, macAddress, nasId } = body;
-
     if (!code) {
         throw new AppError(400, 'Voucher code required');
     }
-
     const voucher = await prisma.voucher.findFirst({
         where: { code: code.toUpperCase(), status: 'AVAILABLE' },
         include: { package: true, tenant: true },
     });
-
     if (!voucher) {
         throw new AppError(404, 'Invalid or unavailable voucher');
     }
-
     // Create a temporary customer/session for the voucher
     const username = `V-${code.toUpperCase()}`;
-
     // Mark voucher as used
     await prisma.voucher.update({
         where: { id: voucher.id },
@@ -223,7 +190,6 @@ portalRoutes.post('/voucher', async (c) => {
             usedAt: new Date(),
         },
     });
-
     // Create session
     const session = await prisma.session.create({
         data: {
@@ -236,7 +202,6 @@ portalRoutes.post('/voucher', async (c) => {
             tenantId: voucher.tenantId,
         },
     });
-
     return c.json({
         success: true,
         sessionId: session.sessionId,
@@ -249,14 +214,11 @@ portalRoutes.post('/voucher', async (c) => {
         },
     });
 });
-
 // GET /api/portal/tenant - Get tenant info for branding
 portalRoutes.get('/tenant', async (c) => {
     const tenantId = c.req.query('tenantId');
     const nasIp = c.req.query('nasIp');
-
     let tenant;
-
     if (tenantId) {
         tenant = await prisma.tenant.findUnique({
             where: { id: tenantId },
@@ -270,7 +232,8 @@ portalRoutes.get('/tenant', async (c) => {
                 email: true,
             },
         });
-    } else if (nasIp) {
+    }
+    else if (nasIp) {
         // Find tenant by NAS IP
         const nas = await prisma.nAS.findFirst({
             where: { ipAddress: nasIp },
@@ -278,11 +241,9 @@ portalRoutes.get('/tenant', async (c) => {
         });
         tenant = nas?.tenant;
     }
-
     if (!tenant) {
         throw new AppError(404, 'Tenant not found');
     }
-
     return c.json({
         id: tenant.id,
         name: tenant.businessName ?? tenant.name,
@@ -294,24 +255,27 @@ portalRoutes.get('/tenant', async (c) => {
         },
     });
 });
-
 // Helper functions
-function formatDuration(minutes: number): string {
-    if (minutes < 60) return `${minutes} min`;
-    if (minutes < 1440) return `${Math.floor(minutes / 60)} hours`;
+function formatDuration(minutes) {
+    if (minutes < 60)
+        return `${minutes} min`;
+    if (minutes < 1440)
+        return `${Math.floor(minutes / 60)} hours`;
     return `${Math.floor(minutes / 1440)} days`;
 }
-
-function formatBytes(bytes: number): string {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+function formatBytes(bytes) {
+    if (bytes < 1024)
+        return `${bytes} B`;
+    if (bytes < 1024 * 1024)
+        return `${(bytes / 1024).toFixed(1)} KB`;
+    if (bytes < 1024 * 1024 * 1024)
+        return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
-
-function formatUptime(seconds: number): string {
+function formatUptime(seconds) {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     const secs = seconds % 60;
     return `${hours}h ${minutes}m ${secs}s`;
 }
+//# sourceMappingURL=portal.routes.js.map

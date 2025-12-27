@@ -87,8 +87,16 @@ model Tenant {
   phone         String?
   location      String?
   logo          String?
+  primaryColor  String?      // For portal branding
   status        TenantStatus @default(TRIAL)
   walletBalance Float        @default(0)
+  
+  // SMS Provider Settings
+  smsProvider   String?
+  smsApiKey     String?
+  smsSenderId   String?
+  smsBalance    Float        @default(0)
+  
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 
@@ -104,6 +112,7 @@ model Tenant {
   smsLogs    SMSLog[]
   auditLogs  AuditLog[]
   accounts   ChartOfAccount[]
+  vpnPeers   VPNPeer[]
 
   @@index([status])
 }
@@ -167,6 +176,8 @@ model Customer {
   sessions Session[]
   payments Payment[]
   invoices Invoice[]
+  vpnPeers VPNPeer[]
+  usedVouchers Voucher[]
 
   @@unique([username, tenantId])
   @@index([tenantId])
@@ -276,7 +287,7 @@ model Voucher {
   code      String
   status    VoucherStatus @default(AVAILABLE)
   usedAt    DateTime?
-  usedBy    String?       // Customer username
+  usedById  String?       // Customer ID who used the voucher
   expiresAt DateTime?
   packageId String
   tenantId  String
@@ -285,8 +296,9 @@ model Voucher {
   updatedAt DateTime      @updatedAt
 
   // Relations
-  tenant  Tenant  @relation(fields: [tenantId], references: [id])
-  package Package @relation(fields: [packageId], references: [id])
+  tenant   Tenant    @relation(fields: [tenantId], references: [id])
+  package  Package   @relation(fields: [packageId], references: [id])
+  customer Customer? @relation(fields: [usedById], references: [id])
 
   @@unique([code, tenantId])
   @@index([tenantId])
@@ -383,10 +395,11 @@ model ChartOfAccount {
 
 model SMSLog {
   id        String   @id @default(uuid())
-  phone     String
+  recipient String   // Phone number
   message   String
-  status    String   // pending, sent, delivered, failed
+  status    String   // PENDING, SENT, DELIVERED, FAILED
   provider  String
+  cost      Float?   // Cost per SMS if tracked
   initiator String?  // What triggered the SMS
   tenantId  String
   createdAt DateTime @default(now())
@@ -396,6 +409,7 @@ model SMSLog {
 
   @@index([tenantId])
   @@index([tenantId, createdAt])
+  @@index([tenantId, status])
 }
 
 model AuditLog {
@@ -418,3 +432,31 @@ model AuditLog {
   @@index([userId])
   @@index([tenantId, createdAt])
 }
+
+// ============ VPN (WireGuard) ============
+
+model VPNPeer {
+  id                  String    @id @default(uuid())
+  name                String
+  publicKey           String
+  privateKey          String    // Encrypted in production
+  allowedIps          String    @default("0.0.0.0/0")
+  assignedIp          String    // IP assigned to this peer
+  persistentKeepalive Int       @default(25)
+  status              String    @default("ACTIVE") // ACTIVE, DISABLED
+  lastHandshake       DateTime?
+  bytesReceived       BigInt    @default(0)
+  bytesSent           BigInt    @default(0)
+  customerId          String?
+  tenantId            String
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  // Relations
+  customer Customer? @relation(fields: [customerId], references: [id])
+  tenant   Tenant    @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+}
+
