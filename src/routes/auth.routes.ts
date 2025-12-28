@@ -103,14 +103,18 @@ authRoutes.post('/register', async (c) => {
             },
         });
 
-        // Create admin user
+        // Create super admin user with all permissions
         const user = await tx.user.create({
             data: {
                 email,
                 password: hashedPassword,
                 name,
-                role: 'ADMIN',
+                role: 'SUPER_ADMIN', // Super admin role
+                status: 'ACTIVE',
                 tenantId: tenant.id,
+                // Super admin has all permissions by default (empty arrays mean no restrictions)
+                addedPermissions: [],
+                removedPermissions: [],
             },
         });
 
@@ -131,6 +135,8 @@ authRoutes.post('/register', async (c) => {
                 email: result.user.email,
                 role: result.user.role,
                 tenantId: result.tenant.id,
+                addedPermissions: result.user.addedPermissions,
+                removedPermissions: result.user.removedPermissions,
             },
             token,
         },
