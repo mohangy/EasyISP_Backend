@@ -264,7 +264,7 @@ superAdminRoutes.get('/stats', authMiddleware, requireSaaSOwner, async (c) => {
 
     const totalCustomers = await prisma.customer.count();
     const totalUsers = await prisma.user.count();
-    const totalRouters = await prisma.nas.count();
+    const totalRouters = await prisma.nAS.count();
 
     return c.json({
         stats: {
