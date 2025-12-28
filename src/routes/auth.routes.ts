@@ -53,8 +53,43 @@ authRoutes.post('/login', async (c) => {
         throw new AppError(403, 'Account is suspended or inactive');
     }
 
-    if (user.tenant.status !== 'ACTIVE' && user.tenant.status !== 'TRIAL') {
-        throw new AppError(403, 'Tenant account is suspended or expired');
+    // Check tenant status
+    if (user.tenant.status === 'SUSPENDED') {
+        throw new AppError(403, 'Your company account has been suspended. Please contact support.');
+    }
+
+    if (user.tenant.status === 'EXPIRED') {
+        throw new AppError(403, 'Your company account has expired. Please contact us to renew your subscription.');
+    }
+
+    // Check trial expiration for trial accounts
+    if (user.tenant.status === 'TRIAL') {
+        const now = new Date();
+
+        if (user.tenant.trialEndsAt && user.tenant.trialEndsAt < now) {
+            // Trial has expired
+            // Auto-update tenant status to EXPIRED
+            await prisma.tenant.update({
+                where: { id: user.tenant.id },
+                data: { status: 'EXPIRED' },
+            });
+
+            throw new AppError(403, 'Your trial period has expired. Please contact us to activate your account.');
+        }
+    }
+
+    // Additional check: if activated, verify subscription hasn't expired
+    if (user.tenant.isActivated && user.tenant.subscriptionEndsAt) {
+        const now = new Date();
+        if (user.tenant.subscriptionEndsAt < now) {
+            // Subscription expired
+            await prisma.tenant.update({
+                where: { id: user.tenant.id },
+                data: { status: 'EXPIRED' },
+            });
+
+            throw new AppError(403, 'Your subscription has expired. Please renew to continue using our services.');
+        }
     }
 
     const token = sign(
@@ -92,7 +127,11 @@ authRoutes.post('/register', async (c) => {
 
     // Create tenant and admin user in a transaction
     const result = await prisma.$transaction(async (tx) => {
-        // Create tenant
+        // Calculate trial end date (7 days from now)
+        const trialEndsAt = new Date();
+        trialEndsAt.setDate(trialEndsAt.getDate() + 7);
+
+        // Create tenant with 7-day trial
         const tenant = await tx.tenant.create({
             data: {
                 name: businessName.toLowerCase().replace(/\s+/g, '-'),
@@ -100,6 +139,8 @@ authRoutes.post('/register', async (c) => {
                 email,
                 phone,
                 status: 'TRIAL',
+                isActivated: false,           // Requires SaaS owner activation
+                trialEndsAt: trialEndsAt,     // 7 days from registration
             },
         });
 

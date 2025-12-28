@@ -21,6 +21,7 @@ import { wizardRoutes } from './routes/wizard.routes.js';
 import { voucherRoutes } from './routes/voucher.routes.js';
 import { smsRoutes } from './routes/sms.routes.js';
 import { mapRoutes } from './routes/map.routes.js';
+import { superAdminRoutes } from './routes/superAdmin.routes.js';
 // Phase 6: Advanced Features
 import { radiusRoutes } from './routes/radius.routes.js';
 import { portalRoutes } from './routes/portal.routes.js';
@@ -62,6 +63,7 @@ api.route('/wizard', wizardRoutes);
 api.route('/vouchers', voucherRoutes);
 api.route('/sms', smsRoutes);
 api.route('/map', mapRoutes);
+api.route('/super-admin', superAdminRoutes);
 // Phase 6: Advanced Features
 api.route('/radius', radiusRoutes);
 api.route('/portal', portalRoutes);

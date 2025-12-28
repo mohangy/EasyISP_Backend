@@ -91,6 +91,11 @@ model Tenant {
   status        TenantStatus @default(TRIAL)
   walletBalance Float        @default(0)
   
+  // Trial & Subscription Management
+  isActivated      Boolean   @default(false)  // Activated by SaaS owner
+  trialEndsAt      DateTime?                  // When trial expires
+  subscriptionEndsAt DateTime?                // When paid subscription expires
+  
   // SMS Provider Settings
   smsProvider   String?
   smsApiKey     String?
@@ -115,6 +120,8 @@ model Tenant {
   vpnPeers   VPNPeer[]
 
   @@index([status])
+  @@index([isActivated])
+  @@index([trialEndsAt])
 }
 
 model User {
