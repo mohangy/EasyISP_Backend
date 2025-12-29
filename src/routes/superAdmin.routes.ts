@@ -448,7 +448,8 @@ superAdminRoutes.post('/tenants/:id/reset-user-password', authMiddleware, requir
         newPassword: z.string().min(6),
     }).parse(body);
 
-    const bcrypt = await import('bcryptjs');
+    const bcryptModule = await import('bcryptjs');
+    const bcrypt = bcryptModule.default || bcryptModule;
 
     const user = await prisma.user.findFirst({
         where: { id: userId, tenantId: id },
