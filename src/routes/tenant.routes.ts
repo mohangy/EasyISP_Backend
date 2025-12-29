@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { authMiddleware, requireRole } from '../middleware/auth.js';
 import { AppError } from '../middleware/errorHandler.js';
+import { smsService } from '../services/sms.service.js';
 import bcrypt from 'bcryptjs';
 const { hash } = bcrypt;
 
@@ -303,4 +304,119 @@ tenantRoutes.get('/operators/:id/logs', async (c) => {
         })),
         total,
     });
+});
+
+// ==================== SMS Configuration Endpoints ====================
+
+// GET /api/tenant/sms-config/providers - List available SMS providers
+tenantRoutes.get('/sms-config/providers', async (c) => {
+    const providers = smsService.getProviders();
+    return c.json({ providers });
+});
+
+// GET /api/tenant/sms-config - Get current SMS configuration
+tenantRoutes.get('/sms-config', requireRole('ADMIN', 'SUPER_ADMIN'), async (c) => {
+    const tenantId = c.get('tenantId');
+
+    const tenant = await prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: {
+            smsProvider: true,
+            smsApiKey: true,
+            smsConfig: true,
+            smsSenderId: true,
+            smsBalance: true,
+        },
+    });
+
+    if (!tenant) {
+        throw new AppError(404, 'Tenant not found');
+    }
+
+    return c.json({
+        provider: tenant.smsProvider,
+        senderId: tenant.smsSenderId,
+        balance: tenant.smsBalance,
+        config: tenant.smsConfig || {},
+        // Mask API key for security
+        hasApiKey: !!tenant.smsApiKey,
+    });
+});
+
+// PUT /api/tenant/sms-config - Update SMS configuration
+const updateSmsConfigSchema = z.object({
+    provider: z.enum(['TEXTSMS', 'TALKSASA', 'HOSTPINNACLE', 'CELCOM', 'BYTEWAVE', 'BLESSEDTEXT', 'ADVANTA']),
+    senderId: z.string().min(1),
+    config: z.record(z.any()), // Provider-specific config
+});
+
+tenantRoutes.put('/sms-config', requireRole('ADMIN', 'SUPER_ADMIN'), async (c) => {
+    const tenantId = c.get('tenantId');
+    const body = await c.req.json();
+    const { provider, senderId, config } = updateSmsConfigSchema.parse(body);
+
+    // Extract apiKey from config if present
+    const apiKey = config.apikey || config.apiKey || config.apiToken || config.proxyApiKey || null;
+
+    await prisma.tenant.update({
+        where: { id: tenantId },
+        data: {
+            smsProvider: provider,
+            smsSenderId: senderId,
+            smsApiKey: apiKey,
+            smsConfig: config,
+        },
+    });
+
+    return c.json({
+        success: true,
+        message: `SMS provider set to ${provider}`,
+    });
+});
+
+// POST /api/tenant/sms-config/test - Test SMS configuration
+tenantRoutes.post('/sms-config/test', requireRole('ADMIN', 'SUPER_ADMIN'), async (c) => {
+    const body = await c.req.json();
+    const { provider, config } = body;
+
+    if (!provider || !config) {
+        throw new AppError(400, 'Provider and config are required');
+    }
+
+    const result = await smsService.testConnection(provider, config);
+    return c.json(result);
+});
+
+// POST /api/tenant/sms-config/send-test - Send test SMS
+const sendTestSmsSchema = z.object({
+    phone: z.string().min(10),
+    message: z.string().min(1).max(160),
+});
+
+tenantRoutes.post('/sms-config/send-test', requireRole('ADMIN', 'SUPER_ADMIN'), async (c) => {
+    const tenantId = c.get('tenantId');
+    const body = await c.req.json();
+    const { phone, message } = sendTestSmsSchema.parse(body);
+
+    const result = await smsService.sendSms(tenantId, phone, message);
+
+    if (result.success) {
+        return c.json({
+            success: true,
+            message: 'Test SMS sent successfully',
+            messageId: result.messageId,
+        });
+    } else {
+        return c.json({
+            success: false,
+            message: result.error || 'Failed to send test SMS',
+        }, 400);
+    }
+});
+
+// GET /api/tenant/sms-balance - Get SMS balance
+tenantRoutes.get('/sms-balance', async (c) => {
+    const tenantId = c.get('tenantId');
+    const result = await smsService.getBalance(tenantId);
+    return c.json(result);
 });

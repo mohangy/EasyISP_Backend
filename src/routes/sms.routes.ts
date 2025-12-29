@@ -5,6 +5,7 @@ import { authMiddleware } from '../middleware/auth.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { createAuditLog } from '../lib/audit.js';
 import { logger } from '../lib/logger.js';
+import { smsService } from '../services/sms.service.js';
 
 export const smsRoutes = new Hono();
 
@@ -109,35 +110,44 @@ smsRoutes.post('/', async (c) => {
         ? data.recipients
         : [data.recipients];
 
-    // TODO: Implement actual SMS sending via provider
-    // For now, just log the messages
-
-    const logs = await prisma.sMSLog.createManyAndReturn({
-        data: recipients.map((recipient) => ({
-            recipient,
-            message: data.message,
-            status: 'PENDING',
-            provider: 'mock', // Would be actual provider
-            tenantId,
-        })),
+    // Check if tenant has SMS provider configured
+    const tenant = await prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { smsProvider: true },
     });
+
+    if (!tenant?.smsProvider) {
+        throw new AppError(400, 'SMS provider not configured. Please configure in Settings.');
+    }
+
+    // Send SMS via unified service
+    const results = await Promise.all(
+        recipients.map(async (recipient) => {
+            const result = await smsService.sendSms(tenantId, recipient, data.message);
+            return { recipient, ...result };
+        })
+    );
+
+    const successful = results.filter((r) => r.success);
+    const failed = results.filter((r) => !r.success);
 
     // Audit log
     await createAuditLog({
         action: 'SMS_SEND',
         targetType: 'SMS',
         targetName: `${recipients.length} recipients`,
-        details: `Message: ${data.message.slice(0, 50)}...`,
+        details: `Message: ${data.message.slice(0, 50)}... | Sent: ${successful.length}, Failed: ${failed.length}`,
         user,
     });
 
-    logger.info({ recipients: recipients.length, tenantId }, 'SMS send requested');
+    logger.info({ recipients: recipients.length, sent: successful.length, failed: failed.length, tenantId }, 'SMS send completed');
 
     return c.json(
         {
             success: true,
-            count: recipients.length,
-            messageIds: logs.map((l) => l.id),
+            sent: successful.length,
+            failed: failed.length,
+            results,
         },
         201
     );
