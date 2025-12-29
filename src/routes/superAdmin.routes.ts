@@ -281,3 +281,194 @@ superAdminRoutes.get('/stats', authMiddleware, requireSaaSOwner, async (c) => {
         },
     });
 });
+
+// POST /api/super-admin/tenants/:id/extend-subscription - Extend subscription period
+superAdminRoutes.post('/tenants/:id/extend-subscription', authMiddleware, requireSaaSOwner, async (c) => {
+    const id = c.req.param('id');
+    const body = await c.req.json();
+
+    // Accept either months or a specific date
+    const schema = z.object({
+        months: z.number().min(1).max(120).optional(),
+        subscriptionEndsAt: z.string().datetime().optional(),
+    }).refine(data => data.months || data.subscriptionEndsAt, {
+        message: "Either months or subscriptionEndsAt must be provided"
+    });
+
+    const { months, subscriptionEndsAt } = schema.parse(body);
+
+    const tenant = await prisma.tenant.findUnique({ where: { id } });
+
+    if (!tenant) {
+        throw new AppError(404, 'Tenant not found');
+    }
+
+    // Calculate new subscription end date
+    let newEndDate: Date;
+    if (subscriptionEndsAt) {
+        newEndDate = new Date(subscriptionEndsAt);
+    } else {
+        const currentEnd = tenant.subscriptionEndsAt ? new Date(tenant.subscriptionEndsAt) : new Date();
+        currentEnd.setMonth(currentEnd.getMonth() + months!);
+        newEndDate = currentEnd;
+    }
+
+    const updatedTenant = await prisma.tenant.update({
+        where: { id },
+        data: {
+            subscriptionEndsAt: newEndDate,
+            status: 'ACTIVE',
+            isActivated: true,
+        },
+    });
+
+    logger.info({ tenantId: id, newEndDate }, 'Subscription extended by SaaS owner');
+
+    return c.json({
+        message: `Subscription extended until ${newEndDate.toLocaleDateString()}`,
+        tenant: updatedTenant,
+    });
+});
+
+// POST /api/super-admin/tenants/:id/add-balance - Add wallet balance
+superAdminRoutes.post('/tenants/:id/add-balance', authMiddleware, requireSaaSOwner, async (c) => {
+    const id = c.req.param('id');
+    const body = await c.req.json();
+    const { amount, type } = z.object({
+        amount: z.number().min(0),
+        type: z.enum(['wallet', 'sms'])
+    }).parse(body);
+
+    const tenant = await prisma.tenant.findUnique({ where: { id } });
+
+    if (!tenant) {
+        throw new AppError(404, 'Tenant not found');
+    }
+
+    const updateData = type === 'wallet'
+        ? { walletBalance: tenant.walletBalance + amount }
+        : { smsBalance: tenant.smsBalance + amount };
+
+    const updatedTenant = await prisma.tenant.update({
+        where: { id },
+        data: updateData,
+    });
+
+    logger.info({ tenantId: id, amount, type }, 'Balance added by SaaS owner');
+
+    return c.json({
+        message: `Added ${amount} to ${type} balance`,
+        tenant: updatedTenant,
+    });
+});
+
+// PUT /api/super-admin/tenants/:id/settings - Update tenant settings
+superAdminRoutes.put('/tenants/:id/settings', authMiddleware, requireSaaSOwner, async (c) => {
+    const id = c.req.param('id');
+    const body = await c.req.json();
+
+    const settingsSchema = z.object({
+        businessName: z.string().min(1).optional(),
+        email: z.string().email().optional(),
+        phone: z.string().optional(),
+        location: z.string().optional(),
+        logo: z.string().optional(),
+        primaryColor: z.string().optional(),
+        // SMS Settings
+        smsProvider: z.string().optional(),
+        smsApiKey: z.string().optional(),
+        smsSenderId: z.string().optional(),
+    });
+
+    const validatedData = settingsSchema.parse(body);
+
+    const tenant = await prisma.tenant.findUnique({ where: { id } });
+
+    if (!tenant) {
+        throw new AppError(404, 'Tenant not found');
+    }
+
+    const updatedTenant = await prisma.tenant.update({
+        where: { id },
+        data: validatedData,
+    });
+
+    logger.info({ tenantId: id }, 'Tenant settings updated by SaaS owner');
+
+    return c.json({
+        message: 'Settings updated successfully',
+        tenant: updatedTenant,
+    });
+});
+
+// DELETE /api/super-admin/tenants/:id - Delete tenant and all related data
+superAdminRoutes.delete('/tenants/:id', authMiddleware, requireSaaSOwner, async (c) => {
+    const id = c.req.param('id');
+
+    const tenant = await prisma.tenant.findUnique({
+        where: { id },
+        include: { _count: { select: { customers: true, users: true } } }
+    });
+
+    if (!tenant) {
+        throw new AppError(404, 'Tenant not found');
+    }
+
+    // Delete all related data in a transaction
+    await prisma.$transaction(async (tx) => {
+        // Delete in order of dependencies
+        await tx.auditLog.deleteMany({ where: { tenantId: id } });
+        await tx.sMSLog.deleteMany({ where: { tenantId: id } });
+        await tx.vPNPeer.deleteMany({ where: { tenantId: id } });
+        await tx.voucher.deleteMany({ where: { tenantId: id } });
+        await tx.payment.deleteMany({ where: { tenantId: id } });
+        await tx.expense.deleteMany({ where: { tenantId: id } });
+        await tx.invoice.deleteMany({ where: { tenantId: id } });
+        await tx.chartOfAccount.deleteMany({ where: { tenantId: id } });
+        await tx.customer.deleteMany({ where: { tenantId: id } });
+        await tx.package.deleteMany({ where: { tenantId: id } });
+        await tx.nAS.deleteMany({ where: { tenantId: id } });
+        await tx.user.deleteMany({ where: { tenantId: id } });
+        await tx.tenant.delete({ where: { id } });
+    });
+
+    logger.warn({ tenantId: id, businessName: tenant.businessName }, 'Tenant deleted by SaaS owner');
+
+    return c.json({
+        message: 'Tenant and all related data deleted successfully',
+    });
+});
+
+// POST /api/super-admin/tenants/:id/reset-user-password - Reset a user's password
+superAdminRoutes.post('/tenants/:id/reset-user-password', authMiddleware, requireSaaSOwner, async (c) => {
+    const id = c.req.param('id');
+    const body = await c.req.json();
+    const { userId, newPassword } = z.object({
+        userId: z.string().uuid(),
+        newPassword: z.string().min(6),
+    }).parse(body);
+
+    const bcrypt = await import('bcryptjs');
+
+    const user = await prisma.user.findFirst({
+        where: { id: userId, tenantId: id },
+    });
+
+    if (!user) {
+        throw new AppError(404, 'User not found');
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
+
+    await prisma.user.update({
+        where: { id: userId },
+        data: { password: hashedPassword },
+    });
+
+    logger.info({ tenantId: id, userId }, 'User password reset by SaaS owner');
+
+    return c.json({
+        message: 'Password reset successfully',
+    });
+});
+
