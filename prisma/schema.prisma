@@ -419,6 +419,7 @@ model SMSLog {
   provider  String
   cost      Float?   // Cost per SMS if tracked
   initiator String?  // What triggered the SMS
+  providerMessageId String? // ID from the SMS provider for delivery tracking
   tenantId  String
   createdAt DateTime @default(now())
 

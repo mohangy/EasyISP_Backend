@@ -179,6 +179,47 @@ smsRoutes.get('/:id', async (c) => {
     });
 });
 
+// GET /api/sms/:id/delivery-status - Check real delivery status
+smsRoutes.get('/:id/delivery-status', async (c) => {
+    const tenantId = c.get('tenantId');
+    const id = c.req.param('id');
+
+    const log = await prisma.sMSLog.findUnique({
+        where: { id, tenantId },
+    });
+
+    if (!log) {
+        throw new AppError(404, 'SMS log not found');
+    }
+
+    if (!log.providerMessageId) {
+        return c.json({ success: false, status: 'Unknown', error: 'No provider ID found' });
+    }
+
+    const status = await smsService.getDeliveryStatus(tenantId, log.providerMessageId);
+    return c.json(status);
+});
+
+// DELETE /api/sms/:id - Delete single SMS log
+smsRoutes.delete('/:id', async (c) => {
+    const tenantId = c.get('tenantId');
+    const id = c.req.param('id');
+    const user = c.get('user');
+
+    if (user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN') {
+        throw new AppError(403, 'Permission denied');
+    }
+
+    try {
+        await prisma.sMSLog.delete({
+            where: { id, tenantId },
+        });
+        return c.json({ success: true });
+    } catch (e) {
+        throw new AppError(404, 'SMS log not found');
+    }
+});
+
 // DELETE /api/sms - Clear all logs
 smsRoutes.delete('/', async (c) => {
     const tenantId = c.get('tenantId');

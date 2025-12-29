@@ -10,11 +10,19 @@ import { logger } from '../lib/logger.js';
 export interface SmsProviderAdapter {
     sendSms(phone: string, message: string): Promise<SmsResult>;
     getBalance(): Promise<BalanceResult>;
+    getDeliveryStatus(messageId: string): Promise<DeliveryStatusResult>;
 }
 
 export interface SmsResult {
     success: boolean;
     messageId?: string;
+    error?: string;
+}
+
+export interface DeliveryStatusResult {
+    success: boolean;
+    status: string;
+    description?: string;
     error?: string;
 }
 
@@ -119,6 +127,27 @@ class TextSmsAdapter implements SmsProviderAdapter {
             return { success: false, error: error.message };
         }
     }
+    async getDeliveryStatus(messageId: string): Promise<DeliveryStatusResult> {
+        try {
+            const response = await fetch('https://sms.textsms.co.ke/api/services/getdlr/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    apikey: this.config.apikey,
+                    partnerID: this.config.partnerID,
+                    messageID: messageId,
+                }),
+            });
+            const data = await response.json() as any;
+            const item = data.responses?.[0];
+            if (item) {
+                return { success: true, status: item['delivery-status'] || 'Unknown', description: item['response-description'] };
+            }
+            return { success: false, status: 'Unknown', error: 'No data returned' };
+        } catch (error: any) {
+            return { success: false, status: 'Error', error: error.message };
+        }
+    }
 }
 
 class TalksasaAdapter implements SmsProviderAdapter {
@@ -153,6 +182,9 @@ class TalksasaAdapter implements SmsProviderAdapter {
     async getBalance(): Promise<BalanceResult> {
         // Talksasa doesn't have a balance endpoint in the docs
         return { success: false, error: 'Balance check not supported for Talksasa' };
+    }
+    async getDeliveryStatus(messageId: string): Promise<DeliveryStatusResult> {
+        return { success: false, status: 'Not Supported', error: 'Delivery status not supported for Talksasa' };
     }
 }
 
@@ -192,6 +224,10 @@ class HostpinnacleAdapter implements SmsProviderAdapter {
 
     async getBalance(): Promise<BalanceResult> {
         return { success: false, error: 'Balance check not supported for Hostpinnacle' };
+    }
+
+    async getDeliveryStatus(messageId: string): Promise<DeliveryStatusResult> {
+        return { success: false, status: 'Not Supported', error: 'Delivery status not supported for Hostpinnacle' };
     }
 }
 
@@ -237,6 +273,27 @@ class CelcomAdapter implements SmsProviderAdapter {
             return { success: false, error: error.message };
         }
     }
+    async getDeliveryStatus(messageId: string): Promise<DeliveryStatusResult> {
+        try {
+            const response = await fetch('https://isms.celcomafrica.com/api/services/getdlr/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    apikey: this.config.apikey,
+                    partnerID: this.config.partnerID,
+                    messageID: messageId,
+                }),
+            });
+            const data = await response.json() as any;
+            const item = data.responses?.[0];
+            if (item) {
+                return { success: true, status: item['delivery-status'] || 'Unknown', description: item['response-description'] };
+            }
+            return { success: false, status: 'Unknown', error: 'No data returned' };
+        } catch (error: any) {
+            return { success: false, status: 'Error', error: error.message };
+        }
+    }
 }
 
 class BytewaveAdapter implements SmsProviderAdapter {
@@ -270,6 +327,10 @@ class BytewaveAdapter implements SmsProviderAdapter {
 
     async getBalance(): Promise<BalanceResult> {
         return { success: false, error: 'Balance check not implemented for Bytewave' };
+    }
+
+    async getDeliveryStatus(messageId: string): Promise<DeliveryStatusResult> {
+        return { success: false, status: 'Not Supported', error: 'Delivery status not implemented for Bytewave' };
     }
 }
 
@@ -320,6 +381,9 @@ class BlessedtextAdapter implements SmsProviderAdapter {
             return { success: false, error: error.message };
         }
     }
+    async getDeliveryStatus(messageId: string): Promise<DeliveryStatusResult> {
+        return { success: false, status: 'Not Supported', error: 'Delivery status not implemented for Blessedtext' };
+    }
 }
 
 class AdvantaAdapter implements SmsProviderAdapter {
@@ -362,6 +426,27 @@ class AdvantaAdapter implements SmsProviderAdapter {
             return { success: true, balance: parseFloat(data.credit || data.balance || 0) };
         } catch (error: any) {
             return { success: false, error: error.message };
+        }
+    }
+    async getDeliveryStatus(messageId: string): Promise<DeliveryStatusResult> {
+        try {
+            const response = await fetch('https://quicksms.advantasms.com/api/services/getdlr/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    apikey: this.config.apikey,
+                    partnerID: this.config.partnerID,
+                    messageID: messageId,
+                }),
+            });
+            const data = await response.json() as any;
+            const item = data.responses?.[0];
+            if (item) {
+                return { success: true, status: item['delivery-status'] || 'Unknown', description: item['response-description'] };
+            }
+            return { success: false, status: 'Unknown', error: 'No data returned' };
+        } catch (error: any) {
+            return { success: false, status: 'Error', error: error.message };
         }
     }
 }
@@ -430,6 +515,7 @@ export const smsService = {
                     status: result.success ? 'SENT' : 'FAILED',
                     provider: tenant.smsProvider,
                     initiator: initiator || 'system',
+                    providerMessageId: result.messageId,
                 },
             });
         } catch (logError: any) {
@@ -463,6 +549,32 @@ export const smsService = {
         }
 
         return adapter.getBalance();
+    },
+
+    /**
+     * Get delivery status
+     */
+    async getDeliveryStatus(tenantId: string, messageId: string): Promise<DeliveryStatusResult> {
+        const tenant = await prisma.tenant.findUnique({
+            where: { id: tenantId },
+            select: { smsProvider: true, smsConfig: true, smsApiKey: true },
+        });
+
+        if (!tenant?.smsProvider) {
+            return { success: false, status: 'Error', error: 'No SMS provider configured' };
+        }
+
+        const config = {
+            ...(tenant.smsConfig as object || {}),
+            apiKey: tenant.smsApiKey,
+        };
+
+        const adapter = this.getAdapter(tenant.smsProvider, config);
+        if (!adapter) {
+            return { success: false, status: 'Error', error: `Unsupported SMS provider: ${tenant.smsProvider}` };
+        }
+
+        return adapter.getDeliveryStatus(messageId);
     },
 
     /**
