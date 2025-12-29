@@ -115,13 +115,7 @@ export const requirePermission = (permission: string) => {
 
         // Import and check role-based defaults
         const { hasPermission } = await import('../lib/permissions.js');
-        const allowed = hasPermission(user.role, user.addedPermissions, user.removedPermissions, permission);
-
-        // Debug logging for permission issues
-        console.log(`[Permission Check] User: ${user.email}, Role: ${user.role}, Permission: ${permission}, Allowed: ${allowed}`);
-        console.log(`[Permission Check] Added: ${JSON.stringify(user.addedPermissions)}, Removed: ${JSON.stringify(user.removedPermissions)}`);
-
-        if (allowed) {
+        if (hasPermission(user.role, user.addedPermissions, user.removedPermissions, permission)) {
             return next();
         }
 
