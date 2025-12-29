@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { prisma } from '../lib/prisma.js';
-import { authMiddleware } from '../middleware/auth.js';
+import { authMiddleware, requirePermission } from '../middleware/auth.js';
 
 export const dashboardRoutes = new Hono();
 
@@ -8,7 +8,7 @@ export const dashboardRoutes = new Hono();
 dashboardRoutes.use('*', authMiddleware);
 
 // GET /api/dashboard/stats
-dashboardRoutes.get('/stats', async (c) => {
+dashboardRoutes.get('/stats', requirePermission('dashboard:view'), async (c) => {
     const tenantId = c.get('tenantId');
 
     // Get customer counts
@@ -83,7 +83,7 @@ dashboardRoutes.get('/stats', async (c) => {
 });
 
 // GET /api/dashboard/revenue
-dashboardRoutes.get('/revenue', async (c) => {
+dashboardRoutes.get('/revenue', requirePermission('dashboard:payments'), async (c) => {
     const tenantId = c.get('tenantId');
     const period = c.req.query('period') || 'this_year';
 
@@ -169,7 +169,7 @@ dashboardRoutes.get('/revenue', async (c) => {
 });
 
 // GET /api/dashboard/network-usage (placeholder)
-dashboardRoutes.get('/network-usage', async (c) => {
+dashboardRoutes.get('/network-usage', requirePermission('dashboard:network_usage'), async (c) => {
     // TODO: Implement actual network usage from SNMP/RADIUS
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 

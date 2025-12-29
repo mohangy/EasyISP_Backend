@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
-import { authMiddleware } from '../middleware/auth.js';
+import { authMiddleware, requirePermission } from '../middleware/auth.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { createAuditLog } from '../lib/audit.js';
 import { randomBytes } from 'crypto';
@@ -20,7 +20,7 @@ const generateVouchersSchema = z.object({
 });
 
 // GET /api/vouchers
-voucherRoutes.get('/', async (c) => {
+voucherRoutes.get('/', requirePermission('hotspot:view'), async (c) => {
     const tenantId = c.get('tenantId');
     const page = parseInt(c.req.query('page') ?? '1');
     const pageSize = parseInt(c.req.query('pageSize') ?? '20');
@@ -91,7 +91,7 @@ voucherRoutes.get('/', async (c) => {
 });
 
 // POST /api/vouchers - Generate batch
-voucherRoutes.post('/', async (c) => {
+voucherRoutes.post('/', requirePermission('hotspot:add_user'), async (c) => {
     const tenantId = c.get('tenantId');
     const user = c.get('user');
     const body = await c.req.json();
@@ -164,7 +164,7 @@ voucherRoutes.post('/', async (c) => {
 });
 
 // DELETE /api/vouchers/:id - Revoke voucher
-voucherRoutes.delete('/:id', async (c) => {
+voucherRoutes.delete('/:id', requirePermission('hotspot:delete'), async (c) => {
     const tenantId = c.get('tenantId');
     const user = c.get('user');
     const voucherId = c.req.param('id');

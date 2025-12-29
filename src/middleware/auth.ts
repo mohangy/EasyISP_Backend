@@ -95,20 +95,31 @@ export const requirePermission = (permission: string) => {
             return next();
         }
 
-        // Check if permission is in removed permissions
+        // Admin has almost all permissions (except sensitive settings)
+        if (user.role === 'ADMIN') {
+            const adminRestricted = ['settings:licence', 'settings:payment_gateway'];
+            if (!adminRestricted.includes(permission)) {
+                return next();
+            }
+        }
+
+        // Check if permission is explicitly removed
         if (user.removedPermissions.includes(permission)) {
-            throw new AppError(403, 'Permission denied');
+            throw new AppError(403, `Permission denied: ${permission}`);
         }
 
-        // Check if permission is in added permissions or default role permissions
-        const hasPermission = user.addedPermissions.includes(permission);
-        // TODO: Add role-based default permissions check
-
-        if (!hasPermission && user.role !== 'ADMIN') {
-            throw new AppError(403, 'Permission denied');
+        // Check if permission is explicitly added
+        if (user.addedPermissions.includes(permission)) {
+            return next();
         }
 
-        return next();
+        // Import and check role-based defaults
+        const { hasPermission } = await import('../lib/permissions.js');
+        if (hasPermission(user.role, user.addedPermissions, user.removedPermissions, permission)) {
+            return next();
+        }
+
+        throw new AppError(403, `Permission denied: ${permission}`);
     };
 };
 

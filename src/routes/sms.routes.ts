@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
-import { authMiddleware } from '../middleware/auth.js';
+import { authMiddleware, requirePermission } from '../middleware/auth.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { createAuditLog } from '../lib/audit.js';
 import { logger } from '../lib/logger.js';
@@ -28,7 +28,7 @@ const updateSettingsSchema = z.object({
 });
 
 // GET /api/sms - List SMS logs
-smsRoutes.get('/', async (c) => {
+smsRoutes.get('/', requirePermission('sms:view'), async (c) => {
     const tenantId = c.get('tenantId');
     const page = parseInt(c.req.query('page') ?? '1');
     const pageSize = parseInt(c.req.query('pageSize') ?? '20');
@@ -100,7 +100,7 @@ smsRoutes.get('/', async (c) => {
 });
 
 // POST /api/sms - Send SMS
-smsRoutes.post('/', async (c) => {
+smsRoutes.post('/', requirePermission('sms:compose'), async (c) => {
     const tenantId = c.get('tenantId');
     const user = c.get('user');
     const body = await c.req.json();
@@ -155,7 +155,7 @@ smsRoutes.post('/', async (c) => {
 });
 
 // GET /api/sms/:id - Get single SMS details
-smsRoutes.get('/:id', async (c) => {
+smsRoutes.get('/:id', requirePermission('sms:view'), async (c) => {
     const tenantId = c.get('tenantId');
     const id = c.req.param('id');
 
@@ -180,7 +180,7 @@ smsRoutes.get('/:id', async (c) => {
 });
 
 // GET /api/sms/:id/delivery-status - Check real delivery status
-smsRoutes.get('/:id/delivery-status', async (c) => {
+smsRoutes.get('/:id/delivery-status', requirePermission('sms:view'), async (c) => {
     const tenantId = c.get('tenantId');
     const id = c.req.param('id');
 
@@ -201,14 +201,10 @@ smsRoutes.get('/:id/delivery-status', async (c) => {
 });
 
 // DELETE /api/sms/:id - Delete single SMS log
-smsRoutes.delete('/:id', async (c) => {
+smsRoutes.delete('/:id', requirePermission('sms:delete'), async (c) => {
     const tenantId = c.get('tenantId');
     const id = c.req.param('id');
     const user = c.get('user');
-
-    if (user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN') {
-        throw new AppError(403, 'Permission denied');
-    }
 
     try {
         await prisma.sMSLog.delete({
@@ -221,13 +217,9 @@ smsRoutes.delete('/:id', async (c) => {
 });
 
 // DELETE /api/sms - Clear all logs
-smsRoutes.delete('/', async (c) => {
+smsRoutes.delete('/', requirePermission('sms:clear'), async (c) => {
     const tenantId = c.get('tenantId');
     const user = c.get('user');
-
-    if (user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN') {
-        throw new AppError(403, 'Only admins can clear SMS logs');
-    }
 
     const result = await prisma.sMSLog.deleteMany({
         where: { tenantId },
@@ -260,7 +252,7 @@ smsRoutes.get('/balance', async (c) => {
 });
 
 // PUT /api/sms/settings - Update SMS settings
-smsRoutes.put('/settings', async (c) => {
+smsRoutes.put('/settings', requirePermission('sms:settings'), async (c) => {
     const tenantId = c.get('tenantId');
     const user = c.get('user');
     const body = await c.req.json();

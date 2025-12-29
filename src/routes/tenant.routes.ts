@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
-import { authMiddleware, requireRole } from '../middleware/auth.js';
+import { authMiddleware, requireRole, requirePermission } from '../middleware/auth.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { smsService } from '../services/sms.service.js';
 import bcrypt from 'bcryptjs';

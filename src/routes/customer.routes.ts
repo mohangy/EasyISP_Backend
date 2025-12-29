@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
-import { authMiddleware } from '../middleware/auth.js';
+import { authMiddleware, requirePermission } from '../middleware/auth.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { createAuditLog } from '../lib/audit.js';
 import { mikrotikService } from '../services/mikrotik.service.js';
@@ -149,7 +149,7 @@ customerRoutes.get('/:id', async (c) => {
 });
 
 // POST /api/customers
-customerRoutes.post('/', async (c) => {
+customerRoutes.post('/', requirePermission('pppoe:add_user'), async (c) => {
     const tenantId = c.get('tenantId');
     const user = c.get('user');
     const body = await c.req.json();
@@ -204,7 +204,7 @@ customerRoutes.post('/', async (c) => {
 });
 
 // PUT /api/customers/:id
-customerRoutes.put('/:id', async (c) => {
+customerRoutes.put('/:id', requirePermission('pppoe:edit'), async (c) => {
     const tenantId = c.get('tenantId');
     const user = c.get('user');
     const customerId = c.req.param('id');
@@ -260,7 +260,7 @@ customerRoutes.put('/:id', async (c) => {
 });
 
 // DELETE /api/customers/:id
-customerRoutes.delete('/:id', async (c) => {
+customerRoutes.delete('/:id', requirePermission('pppoe:delete'), async (c) => {
     const tenantId = c.get('tenantId');
     const user = c.get('user');
     const customerId = c.req.param('id');
@@ -352,7 +352,7 @@ customerRoutes.get('/:id/live-status', async (c) => {
 });
 
 // POST /api/customers/:id/mac-reset
-customerRoutes.post('/:id/mac-reset', async (c) => {
+customerRoutes.post('/:id/mac-reset', requirePermission('pppoe:reset_mac'), async (c) => {
     const tenantId = c.get('tenantId');
     const user = c.get('user');
     const customerId = c.req.param('id');
@@ -398,7 +398,7 @@ customerRoutes.post('/:id/mac-reset', async (c) => {
 });
 
 // POST /api/customers/:id/disconnect
-customerRoutes.post('/:id/disconnect', async (c) => {
+customerRoutes.post('/:id/disconnect', requirePermission('routers:disconnect'), async (c) => {
     const tenantId = c.get('tenantId');
     const user = c.get('user');
     const customerId = c.req.param('id');
@@ -442,7 +442,7 @@ customerRoutes.post('/:id/disconnect', async (c) => {
 });
 
 // POST /api/customers/:id/recharge
-customerRoutes.post('/:id/recharge', async (c) => {
+customerRoutes.post('/:id/recharge', requirePermission('pppoe:edit'), async (c) => {
     const tenantId = c.get('tenantId');
     const user = c.get('user');
     const customerId = c.req.param('id');
@@ -496,7 +496,7 @@ customerRoutes.post('/:id/recharge', async (c) => {
 });
 
 // PUT /api/customers/:id/expiry
-customerRoutes.put('/:id/expiry', async (c) => {
+customerRoutes.put('/:id/expiry', requirePermission('pppoe:change_expiry'), async (c) => {
     const tenantId = c.get('tenantId');
     const user = c.get('user');
     const customerId = c.req.param('id');
@@ -530,7 +530,7 @@ customerRoutes.put('/:id/expiry', async (c) => {
 });
 
 // PUT /api/customers/:id/package
-customerRoutes.put('/:id/package', async (c) => {
+customerRoutes.put('/:id/package', requirePermission('pppoe:change_plan'), async (c) => {
     const tenantId = c.get('tenantId');
     const user = c.get('user');
     const customerId = c.req.param('id');
@@ -574,7 +574,7 @@ customerRoutes.put('/:id/package', async (c) => {
 });
 
 // POST /api/customers/:id/suspend
-customerRoutes.post('/:id/suspend', async (c) => {
+customerRoutes.post('/:id/suspend', requirePermission('pppoe:suspend'), async (c) => {
     const tenantId = c.get('tenantId');
     const user = c.get('user');
     const customerId = c.req.param('id');
@@ -606,7 +606,7 @@ customerRoutes.post('/:id/suspend', async (c) => {
 });
 
 // POST /api/customers/:id/activate
-customerRoutes.post('/:id/activate', async (c) => {
+customerRoutes.post('/:id/activate', requirePermission('pppoe:resolve'), async (c) => {
     const tenantId = c.get('tenantId');
     const user = c.get('user');
     const customerId = c.req.param('id');
@@ -705,7 +705,7 @@ async function getNasForCustomer(customerId: string, tenantId: string) {
 }
 
 // POST /api/customers/:id/mac-lock - Lock MAC address
-customerRoutes.post('/:id/mac-lock', async (c) => {
+customerRoutes.post('/:id/mac-lock', requirePermission('pppoe:lock_mac'), async (c) => {
     const tenantId = c.get('tenantId');
     const user = c.get('user');
     const customerId = c.req.param('id');
@@ -798,7 +798,7 @@ const overridePlanSchema = z.object({
     uploadMbps: z.number().min(1).max(1000),
 });
 
-customerRoutes.post('/:id/override-plan', async (c) => {
+customerRoutes.post('/:id/override-plan', requirePermission('pppoe:override_plan'), async (c) => {
     const tenantId = c.get('tenantId');
     const user = c.get('user');
     const customerId = c.req.param('id');
@@ -828,7 +828,7 @@ const speedBoostSchema = z.object({
     durationMinutes: z.number().min(1).max(1440), // Max 24 hours
 });
 
-customerRoutes.post('/:id/speed-boost', async (c) => {
+customerRoutes.post('/:id/speed-boost', requirePermission('pppoe:speed_boost'), async (c) => {
     const tenantId = c.get('tenantId');
     const user = c.get('user');
     const customerId = c.req.param('id');
@@ -875,7 +875,7 @@ const assignIpSchema = z.object({
     ipAddress: z.string().ip(),
 });
 
-customerRoutes.post('/:id/assign-ip', async (c) => {
+customerRoutes.post('/:id/assign-ip', requirePermission('pppoe:static_ip'), async (c) => {
     const tenantId = c.get('tenantId');
     const user = c.get('user');
     const customerId = c.req.param('id');
@@ -934,7 +934,7 @@ const sendMessageSchema = z.object({
     message: z.string().min(1).max(500),
 });
 
-customerRoutes.post('/:id/send-message', async (c) => {
+customerRoutes.post('/:id/send-message', requirePermission('pppoe:send_sms'), async (c) => {
     const tenantId = c.get('tenantId');
     const user = c.get('user');
     const customerId = c.req.param('id');

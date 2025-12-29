@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
-import { authMiddleware } from '../middleware/auth.js';
+import { authMiddleware, requirePermission } from '../middleware/auth.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { createAuditLog } from '../lib/audit.js';
 
@@ -24,7 +24,7 @@ const createNasSchema = z.object({
 const updateNasSchema = createNasSchema.partial();
 
 // GET /api/nas
-nasRoutes.get('/', async (c) => {
+nasRoutes.get('/', requirePermission('routers:view'), async (c) => {
     const tenantId = c.get('tenantId');
     const page = parseInt(c.req.query('page') ?? '1');
     const pageSize = parseInt(c.req.query('pageSize') ?? '10');
@@ -89,7 +89,7 @@ nasRoutes.get('/', async (c) => {
 });
 
 // GET /api/nas/:id
-nasRoutes.get('/:id', async (c) => {
+nasRoutes.get('/:id', requirePermission('routers:details_view'), async (c) => {
     const tenantId = c.get('tenantId');
     const nasId = c.req.param('id');
 
@@ -128,7 +128,7 @@ nasRoutes.get('/:id', async (c) => {
 });
 
 // POST /api/nas
-nasRoutes.post('/', async (c) => {
+nasRoutes.post('/', requirePermission('routers:add'), async (c) => {
     const tenantId = c.get('tenantId');
     const user = c.get('user');
     const body = await c.req.json();
@@ -176,7 +176,7 @@ nasRoutes.post('/', async (c) => {
 });
 
 // PUT /api/nas/:id
-nasRoutes.put('/:id', async (c) => {
+nasRoutes.put('/:id', requirePermission('routers:edit'), async (c) => {
     const tenantId = c.get('tenantId');
     const user = c.get('user');
     const nasId = c.req.param('id');
@@ -224,7 +224,7 @@ nasRoutes.put('/:id', async (c) => {
 });
 
 // DELETE /api/nas/:id
-nasRoutes.delete('/:id', async (c) => {
+nasRoutes.delete('/:id', requirePermission('routers:delete'), async (c) => {
     const tenantId = c.get('tenantId');
     const user = c.get('user');
     const nasId = c.req.param('id');
@@ -260,7 +260,7 @@ nasRoutes.delete('/:id', async (c) => {
 });
 
 // POST /api/nas/:id/test
-nasRoutes.post('/:id/test', async (c) => {
+nasRoutes.post('/:id/test', requirePermission('routers:test'), async (c) => {
     const tenantId = c.get('tenantId');
     const nasId = c.req.param('id');
 
@@ -294,7 +294,7 @@ nasRoutes.post('/:id/test', async (c) => {
 });
 
 // GET /api/nas/:id/live-status
-nasRoutes.get('/:id/live-status', async (c) => {
+nasRoutes.get('/:id/live-status', requirePermission('routers:details_view'), async (c) => {
     const tenantId = c.get('tenantId');
     const nasId = c.req.param('id');
 
@@ -327,7 +327,7 @@ nasRoutes.get('/:id/live-status', async (c) => {
 });
 
 // GET /api/nas/:id/config
-nasRoutes.get('/:id/config', async (c) => {
+nasRoutes.get('/:id/config', requirePermission('routers:config'), async (c) => {
     const tenantId = c.get('tenantId');
     const nasId = c.req.param('id');
 

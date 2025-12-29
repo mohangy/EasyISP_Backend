@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
-import { authMiddleware } from '../middleware/auth.js';
+import { authMiddleware, requirePermission } from '../middleware/auth.js';
 import { AppError } from '../middleware/errorHandler.js';
 import type { ConnectionType } from '@prisma/client';
 
@@ -28,7 +28,7 @@ const createPackageSchema = z.object({
 const updatePackageSchema = createPackageSchema.partial();
 
 // GET /api/packages
-packageRoutes.get('/', async (c) => {
+packageRoutes.get('/', requirePermission('packages:view'), async (c) => {
     const tenantId = c.get('tenantId');
     const type = c.req.query('type') as ConnectionType | undefined;
     const active = c.req.query('active');
@@ -82,7 +82,7 @@ packageRoutes.get('/', async (c) => {
 });
 
 // GET /api/packages/:id
-packageRoutes.get('/:id', async (c) => {
+packageRoutes.get('/:id', requirePermission('packages:details_view'), async (c) => {
     const tenantId = c.get('tenantId');
     const packageId = c.req.param('id');
 
@@ -127,7 +127,7 @@ packageRoutes.get('/:id', async (c) => {
 });
 
 // POST /api/packages
-packageRoutes.post('/', async (c) => {
+packageRoutes.post('/', requirePermission('packages:add_pppoe'), async (c) => {
     const tenantId = c.get('tenantId');
     const body = await c.req.json();
     const data = createPackageSchema.parse(body);
@@ -174,7 +174,7 @@ packageRoutes.post('/', async (c) => {
 });
 
 // PUT /api/packages/:id
-packageRoutes.put('/:id', async (c) => {
+packageRoutes.put('/:id', requirePermission('packages:edit'), async (c) => {
     const tenantId = c.get('tenantId');
     const packageId = c.req.param('id');
     const body = await c.req.json();
@@ -234,7 +234,7 @@ packageRoutes.put('/:id', async (c) => {
 });
 
 // DELETE /api/packages/:id
-packageRoutes.delete('/:id', async (c) => {
+packageRoutes.delete('/:id', requirePermission('packages:delete'), async (c) => {
     const tenantId = c.get('tenantId');
     const packageId = c.req.param('id');
 
@@ -260,7 +260,7 @@ packageRoutes.delete('/:id', async (c) => {
 });
 
 // GET /api/packages/:id/stats
-packageRoutes.get('/:id/stats', async (c) => {
+packageRoutes.get('/:id/stats', requirePermission('packages:details_view'), async (c) => {
     const tenantId = c.get('tenantId');
     const packageId = c.req.param('id');
 
@@ -304,7 +304,7 @@ packageRoutes.get('/:id/stats', async (c) => {
 });
 
 // GET /api/packages/:id/router-revenue
-packageRoutes.get('/:id/router-revenue', async (c) => {
+packageRoutes.get('/:id/router-revenue', requirePermission('packages:details_view'), async (c) => {
     const tenantId = c.get('tenantId');
     const packageId = c.req.param('id');
 

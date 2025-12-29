@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { prisma } from '../lib/prisma.js';
-import { authMiddleware } from '../middleware/auth.js';
+import { authMiddleware, requirePermission } from '../middleware/auth.js';
 
 export const mapRoutes = new Hono();
 
@@ -8,7 +8,7 @@ export const mapRoutes = new Hono();
 mapRoutes.use('*', authMiddleware);
 
 // GET /api/map/data - Get map data for customers and routers
-mapRoutes.get('/data', async (c) => {
+mapRoutes.get('/data', requirePermission('maps:view'), async (c) => {
     const tenantId = c.get('tenantId');
 
     // Get customers with location data

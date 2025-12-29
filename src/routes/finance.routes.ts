@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
-import { authMiddleware } from '../middleware/auth.js';
+import { authMiddleware, requirePermission } from '../middleware/auth.js';
 import { AppError } from '../middleware/errorHandler.js';
 
 export const financeRoutes = new Hono();
@@ -21,7 +21,7 @@ const recordIncomeSchema = z.object({
 });
 
 // GET /api/finance/income
-financeRoutes.get('/income', async (c) => {
+financeRoutes.get('/income', requirePermission('finance:income_view'), async (c) => {
     const tenantId = c.get('tenantId');
     const page = parseInt(c.req.query('page') ?? '1');
     const pageSize = parseInt(c.req.query('pageSize') ?? '20');
@@ -109,7 +109,7 @@ financeRoutes.get('/income', async (c) => {
 });
 
 // POST /api/finance/income
-financeRoutes.post('/income', async (c) => {
+financeRoutes.post('/income', requirePermission('finance:income_create'), async (c) => {
     const tenantId = c.get('tenantId');
     const body = await c.req.json();
     const data = recordIncomeSchema.parse(body);
@@ -153,7 +153,7 @@ const createExpenseSchema = z.object({
 });
 
 // GET /api/finance/expenses
-financeRoutes.get('/expenses', async (c) => {
+financeRoutes.get('/expenses', requirePermission('finance:expenses_view'), async (c) => {
     const tenantId = c.get('tenantId');
     const page = parseInt(c.req.query('page') ?? '1');
     const pageSize = parseInt(c.req.query('pageSize') ?? '20');
@@ -226,7 +226,7 @@ financeRoutes.get('/expenses', async (c) => {
 });
 
 // POST /api/finance/expenses
-financeRoutes.post('/expenses', async (c) => {
+financeRoutes.post('/expenses', requirePermission('finance:expenses_create'), async (c) => {
     const tenantId = c.get('tenantId');
     const body = await c.req.json();
     const data = createExpenseSchema.parse(body);
@@ -258,7 +258,7 @@ const createAccountSchema = z.object({
 });
 
 // GET /api/finance/accounts
-financeRoutes.get('/accounts', async (c) => {
+financeRoutes.get('/accounts', requirePermission('finance:dashboard_view'), async (c) => {
     const tenantId = c.get('tenantId');
     const type = c.req.query('type');
 
@@ -284,7 +284,7 @@ financeRoutes.get('/accounts', async (c) => {
 });
 
 // POST /api/finance/accounts
-financeRoutes.post('/accounts', async (c) => {
+financeRoutes.post('/accounts', requirePermission('finance:dashboard_view'), async (c) => {
     const tenantId = c.get('tenantId');
     const body = await c.req.json();
     const data = createAccountSchema.parse(body);
@@ -311,7 +311,7 @@ financeRoutes.post('/accounts', async (c) => {
 });
 
 // DELETE /api/finance/accounts/:id
-financeRoutes.delete('/accounts/:id', async (c) => {
+financeRoutes.delete('/accounts/:id', requirePermission('finance:dashboard_view'), async (c) => {
     const tenantId = c.get('tenantId');
     const accountId = c.req.param('id');
 
@@ -349,7 +349,7 @@ const updateInvoiceStatusSchema = z.object({
 });
 
 // GET /api/finance/invoices
-financeRoutes.get('/invoices', async (c) => {
+financeRoutes.get('/invoices', requirePermission('finance:dashboard_view'), async (c) => {
     const tenantId = c.get('tenantId');
     const page = parseInt(c.req.query('page') ?? '1');
     const pageSize = parseInt(c.req.query('pageSize') ?? '20');
@@ -431,7 +431,7 @@ financeRoutes.get('/invoices', async (c) => {
 });
 
 // POST /api/finance/invoices
-financeRoutes.post('/invoices', async (c) => {
+financeRoutes.post('/invoices', requirePermission('finance:dashboard_view'), async (c) => {
     const tenantId = c.get('tenantId');
     const body = await c.req.json();
     const data = createInvoiceSchema.parse(body);
@@ -467,7 +467,7 @@ financeRoutes.post('/invoices', async (c) => {
 });
 
 // PUT /api/finance/invoices/:id/status
-financeRoutes.put('/invoices/:id/status', async (c) => {
+financeRoutes.put('/invoices/:id/status', requirePermission('finance:dashboard_view'), async (c) => {
     const tenantId = c.get('tenantId');
     const invoiceNo = c.req.param('id');
     const body = await c.req.json();

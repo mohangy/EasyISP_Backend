@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
-import { authMiddleware } from '../middleware/auth.js';
+import { authMiddleware, requirePermission } from '../middleware/auth.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../lib/logger.js';
 import { createAuditLog } from '../lib/audit.js';
@@ -21,7 +21,7 @@ const manualPaymentSchema = z.object({
 });
 
 // GET /api/payments/electronic - List M-Pesa transactions
-authenticatedRoutes.get('/electronic', async (c) => {
+authenticatedRoutes.get('/electronic', requirePermission('payments:view_electronic'), async (c) => {
     const tenantId = c.get('tenantId');
     const page = parseInt(c.req.query('page') ?? '1');
     const pageSize = parseInt(c.req.query('pageSize') ?? '20');
@@ -84,7 +84,7 @@ authenticatedRoutes.get('/electronic', async (c) => {
 });
 
 // GET /api/payments/manual - List manual payments
-authenticatedRoutes.get('/manual', async (c) => {
+authenticatedRoutes.get('/manual', requirePermission('payments:view_manual'), async (c) => {
     const tenantId = c.get('tenantId');
     const page = parseInt(c.req.query('page') ?? '1');
     const pageSize = parseInt(c.req.query('pageSize') ?? '20');
@@ -125,7 +125,7 @@ authenticatedRoutes.get('/manual', async (c) => {
 });
 
 // POST /api/payments/manual - Record manual payment
-authenticatedRoutes.post('/manual', async (c) => {
+authenticatedRoutes.post('/manual', requirePermission('payments:view_manual'), async (c) => {
     const tenantId = c.get('tenantId');
     const user = c.get('user');
     const body = await c.req.json();
@@ -183,13 +183,9 @@ authenticatedRoutes.post('/manual', async (c) => {
 });
 
 // DELETE /api/payments/manual - Clear all manual payments (admin only)
-authenticatedRoutes.delete('/manual', async (c) => {
+authenticatedRoutes.delete('/manual', requirePermission('payments:view_manual'), async (c) => {
     const tenantId = c.get('tenantId');
     const user = c.get('user');
-
-    if (user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN') {
-        throw new AppError(403, 'Only admins can clear payment records');
-    }
 
     const manualMethods = ['CASH', 'BANK_TRANSFER', 'CARD', 'OTHER'] as ('CASH' | 'BANK_TRANSFER' | 'CARD' | 'OTHER')[];
 

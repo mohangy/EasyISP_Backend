@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { prisma } from '../lib/prisma.js';
-import { authMiddleware } from '../middleware/auth.js';
+import { authMiddleware, requirePermission } from '../middleware/auth.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../lib/logger.js';
 
@@ -10,7 +10,7 @@ export const sessionRoutes = new Hono();
 sessionRoutes.use('*', authMiddleware);
 
 // GET /api/sessions - List all sessions (active and historical)
-sessionRoutes.get('/', async (c) => {
+sessionRoutes.get('/', requirePermission('dashboard:active_sessions'), async (c) => {
     const tenantId = c.get('tenantId');
     const page = parseInt(c.req.query('page') ?? '1');
     const pageSize = parseInt(c.req.query('pageSize') ?? '20');
@@ -90,7 +90,7 @@ sessionRoutes.get('/', async (c) => {
 });
 
 // GET /api/sessions/stats - Session statistics
-sessionRoutes.get('/stats', async (c) => {
+sessionRoutes.get('/stats', requirePermission('dashboard:active_sessions'), async (c) => {
     const tenantId = c.get('tenantId');
 
     const now = new Date();
@@ -207,7 +207,7 @@ sessionRoutes.post('/cleanup', async (c) => {
 });
 
 // GET /api/sessions/:id - Get session details
-sessionRoutes.get('/:id', async (c) => {
+sessionRoutes.get('/:id', requirePermission('dashboard:active_sessions'), async (c) => {
     const tenantId = c.get('tenantId');
     const sessionId = c.req.param('id');
 
@@ -260,7 +260,7 @@ sessionRoutes.get('/:id', async (c) => {
 });
 
 // DELETE /api/sessions/:id - Force terminate a session
-sessionRoutes.delete('/:id', async (c) => {
+sessionRoutes.delete('/:id', requirePermission('routers:disconnect'), async (c) => {
     const tenantId = c.get('tenantId');
     const sessionId = c.req.param('id');
 
