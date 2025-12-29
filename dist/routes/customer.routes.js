@@ -168,6 +168,7 @@ customerRoutes.post('/', async (c) => {
         targetType: 'Customer',
         targetId: customer.id,
         targetName: customer.username,
+        details: `Created ${data.connectionType} customer: ${data.name}${data.phone ? ` (${data.phone})` : ''}${customer.package?.name ? `, Package: ${customer.package.name}` : ''}`,
         user,
         ipAddress: c.req.header('x-forwarded-for') ?? c.req.header('x-real-ip'),
     });
@@ -202,12 +203,27 @@ customerRoutes.put('/:id', async (c) => {
             expiresAt: data.expiresAt ? new Date(data.expiresAt) : undefined,
         },
     });
+    // Build details of what was changed
+    const changedFields = [];
+    if (data.name && data.name !== existing.name)
+        changedFields.push(`Name: ${existing.name} → ${data.name}`);
+    if (data.username && data.username !== existing.username)
+        changedFields.push(`Username: ${existing.username} → ${data.username}`);
+    if (data.email && data.email !== existing.email)
+        changedFields.push(`Email: ${existing.email ?? 'none'} → ${data.email}`);
+    if (data.phone && data.phone !== existing.phone)
+        changedFields.push(`Phone: ${existing.phone ?? 'none'} → ${data.phone}`);
+    if (data.packageId && data.packageId !== existing.packageId)
+        changedFields.push('Package changed');
+    if (data.location && data.location !== existing.location)
+        changedFields.push(`Location: ${data.location}`);
     // Audit log
     await createAuditLog({
         action: 'CUSTOMER_UPDATE',
         targetType: 'Customer',
         targetId: customer.id,
         targetName: customer.username,
+        details: changedFields.length > 0 ? changedFields.join(', ') : 'Profile updated',
         user,
     });
     return c.json(customer);
@@ -234,6 +250,7 @@ customerRoutes.delete('/:id', async (c) => {
         targetType: 'Customer',
         targetId: customer.id,
         targetName: customer.username,
+        details: `Deleted ${customer.connectionType} customer: ${customer.name}${customer.phone ? ` (${customer.phone})` : ''}`,
         user,
     });
     return c.json({ success: true });
@@ -312,6 +329,7 @@ customerRoutes.post('/:id/mac-reset', async (c) => {
         targetType: 'Customer',
         targetId: customer.id,
         targetName: customer.username,
+        details: `MAC reset for ${customer.name}${customer.lastMac ? ` (was: ${customer.lastMac})` : ''}`,
         user,
     });
     return c.json({ success: true, message: 'MAC address reset successfully' });
@@ -340,6 +358,7 @@ customerRoutes.post('/:id/disconnect', async (c) => {
         targetType: 'Customer',
         targetId: customer.id,
         targetName: customer.username,
+        details: `Force disconnected ${customer.name} from ${customer.nas?.name ?? 'router'}`,
         user,
     });
     return c.json({ success: true, message: 'Customer disconnected' });
@@ -477,6 +496,7 @@ customerRoutes.post('/:id/suspend', async (c) => {
         targetType: 'Customer',
         targetId: customer.id,
         targetName: customer.username,
+        details: `Suspended ${customer.connectionType} customer: ${customer.name}`,
         user,
     });
     return c.json({ success: true, message: 'Customer suspended' });
@@ -502,8 +522,49 @@ customerRoutes.post('/:id/activate', async (c) => {
         targetType: 'Customer',
         targetId: customer.id,
         targetName: customer.username,
+        details: `Activated ${customer.connectionType} customer: ${customer.name}`,
         user,
     });
     return c.json({ success: true, message: 'Customer activated' });
+});
+// GET /api/customers/:id/transactions - Get customer transactions/payment history
+customerRoutes.get('/:id/transactions', async (c) => {
+    const tenantId = c.get('tenantId');
+    const customerId = c.req.param('id');
+    const customer = await prisma.customer.findFirst({
+        where: { id: customerId, tenantId, deletedAt: null },
+    });
+    if (!customer) {
+        throw new AppError(404, 'Customer not found');
+    }
+    // Get all payments for this customer
+    const payments = await prisma.payment.findMany({
+        where: { customerId, tenantId },
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+    });
+    // Format response for frontend
+    const mpesaTransactions = payments
+        .filter(p => p.method === 'MPESA')
+        .map(p => ({
+        id: p.id,
+        trxDate: p.createdAt.toISOString(),
+        trxCode: p.transactionId || p.id.slice(0, 10).toUpperCase(),
+        paybill: '888880', // Could be from tenant settings
+        amount: p.amount,
+        phone: p.phone || customer.phone || '',
+    }));
+    const manualTransactions = payments
+        .filter(p => p.method !== 'MPESA')
+        .map(p => ({
+        id: p.id,
+        yourRef: p.transactionId || p.description || 'Manual Recharge',
+        amount: p.amount,
+        trxDate: p.createdAt.toISOString(),
+    }));
+    return c.json({
+        mpesaTransactions,
+        manualTransactions,
+    });
 });
 //# sourceMappingURL=customer.routes.js.map

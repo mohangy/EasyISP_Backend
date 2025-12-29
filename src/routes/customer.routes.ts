@@ -194,6 +194,7 @@ customerRoutes.post('/', async (c) => {
         targetType: 'Customer',
         targetId: customer.id,
         targetName: customer.username,
+        details: `Created ${data.connectionType} customer: ${data.name}${data.phone ? ` (${data.phone})` : ''}${customer.package?.name ? `, Package: ${customer.package.name}` : ''}`,
         user,
         ipAddress: c.req.header('x-forwarded-for') ?? c.req.header('x-real-ip'),
     });
@@ -235,12 +236,22 @@ customerRoutes.put('/:id', async (c) => {
         },
     });
 
+    // Build details of what was changed
+    const changedFields: string[] = [];
+    if (data.name && data.name !== existing.name) changedFields.push(`Name: ${existing.name} → ${data.name}`);
+    if (data.username && data.username !== existing.username) changedFields.push(`Username: ${existing.username} → ${data.username}`);
+    if (data.email && data.email !== existing.email) changedFields.push(`Email: ${existing.email ?? 'none'} → ${data.email}`);
+    if (data.phone && data.phone !== existing.phone) changedFields.push(`Phone: ${existing.phone ?? 'none'} → ${data.phone}`);
+    if (data.packageId && data.packageId !== existing.packageId) changedFields.push('Package changed');
+    if (data.location && data.location !== existing.location) changedFields.push(`Location: ${data.location}`);
+
     // Audit log
     await createAuditLog({
         action: 'CUSTOMER_UPDATE',
         targetType: 'Customer',
         targetId: customer.id,
         targetName: customer.username,
+        details: changedFields.length > 0 ? changedFields.join(', ') : 'Profile updated',
         user,
     });
 
@@ -273,6 +284,7 @@ customerRoutes.delete('/:id', async (c) => {
         targetType: 'Customer',
         targetId: customer.id,
         targetName: customer.username,
+        details: `Deleted ${customer.connectionType} customer: ${customer.name}${customer.phone ? ` (${customer.phone})` : ''}`,
         user,
     });
 
@@ -363,6 +375,7 @@ customerRoutes.post('/:id/mac-reset', async (c) => {
         targetType: 'Customer',
         targetId: customer.id,
         targetName: customer.username,
+        details: `MAC reset for ${customer.name}${customer.lastMac ? ` (was: ${customer.lastMac})` : ''}`,
         user,
     });
 
@@ -397,6 +410,7 @@ customerRoutes.post('/:id/disconnect', async (c) => {
         targetType: 'Customer',
         targetId: customer.id,
         targetName: customer.username,
+        details: `Force disconnected ${customer.name} from ${customer.nas?.name ?? 'router'}`,
         user,
     });
 
@@ -560,6 +574,7 @@ customerRoutes.post('/:id/suspend', async (c) => {
         targetType: 'Customer',
         targetId: customer.id,
         targetName: customer.username,
+        details: `Suspended ${customer.connectionType} customer: ${customer.name}`,
         user,
     });
 
@@ -591,6 +606,7 @@ customerRoutes.post('/:id/activate', async (c) => {
         targetType: 'Customer',
         targetId: customer.id,
         targetName: customer.username,
+        details: `Activated ${customer.connectionType} customer: ${customer.name}`,
         user,
     });
 

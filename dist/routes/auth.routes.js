@@ -43,8 +43,37 @@ authRoutes.post('/login', async (c) => {
     if (user.status !== 'ACTIVE') {
         throw new AppError(403, 'Account is suspended or inactive');
     }
-    if (user.tenant.status !== 'ACTIVE' && user.tenant.status !== 'TRIAL') {
-        throw new AppError(403, 'Tenant account is suspended or expired');
+    // Check tenant status
+    if (user.tenant.status === 'SUSPENDED') {
+        throw new AppError(403, 'Your company account has been suspended. Please contact support.');
+    }
+    if (user.tenant.status === 'EXPIRED') {
+        throw new AppError(403, 'Your company account has expired. Please contact us to renew your subscription.');
+    }
+    // Check trial expiration for trial accounts
+    if (user.tenant.status === 'TRIAL') {
+        const now = new Date();
+        if (user.tenant.trialEndsAt && user.tenant.trialEndsAt < now) {
+            // Trial has expired
+            // Auto-update tenant status to EXPIRED
+            await prisma.tenant.update({
+                where: { id: user.tenant.id },
+                data: { status: 'EXPIRED' },
+            });
+            throw new AppError(403, 'Your trial period has expired. Please contact us to activate your account.');
+        }
+    }
+    // Additional check: if activated, verify subscription hasn't expired
+    if (user.tenant.isActivated && user.tenant.subscriptionEndsAt) {
+        const now = new Date();
+        if (user.tenant.subscriptionEndsAt < now) {
+            // Subscription expired
+            await prisma.tenant.update({
+                where: { id: user.tenant.id },
+                data: { status: 'EXPIRED' },
+            });
+            throw new AppError(403, 'Your subscription has expired. Please renew to continue using our services.');
+        }
     }
     const token = sign({ userId: user.id, tenantId: user.tenantId }, config.jwtSecret, { expiresIn: 60 * 60 * 24 * 7 } // 7 days in seconds
     );
@@ -73,7 +102,10 @@ authRoutes.post('/register', async (c) => {
     const hashedPassword = await hash(password, 12);
     // Create tenant and admin user in a transaction
     const result = await prisma.$transaction(async (tx) => {
-        // Create tenant
+        // Calculate trial end date (7 days from now)
+        const trialEndsAt = new Date();
+        trialEndsAt.setDate(trialEndsAt.getDate() + 7);
+        // Create tenant with 7-day trial
         const tenant = await tx.tenant.create({
             data: {
                 name: businessName.toLowerCase().replace(/\s+/g, '-'),
@@ -81,16 +113,22 @@ authRoutes.post('/register', async (c) => {
                 email,
                 phone,
                 status: 'TRIAL',
+                isActivated: false, // Requires SaaS owner activation
+                trialEndsAt: trialEndsAt, // 7 days from registration
             },
         });
-        // Create admin user
+        // Create super admin user with all permissions
         const user = await tx.user.create({
             data: {
                 email,
                 password: hashedPassword,
                 name,
-                role: 'ADMIN',
+                role: 'SUPER_ADMIN', // Super admin role
+                status: 'ACTIVE',
                 tenantId: tenant.id,
+                // Super admin has all permissions by default (empty arrays mean no restrictions)
+                addedPermissions: [],
+                removedPermissions: [],
             },
         });
         return { tenant, user };
@@ -104,6 +142,8 @@ authRoutes.post('/register', async (c) => {
             email: result.user.email,
             role: result.user.role,
             tenantId: result.tenant.id,
+            addedPermissions: result.user.addedPermissions,
+            removedPermissions: result.user.removedPermissions,
         },
         token,
     }, 201);
