@@ -198,6 +198,71 @@ mikrotikRoutes.get('/:nasId/queues', async (c) => {
     return c.json({ queues });
 });
 
+// GET /api/mikrotik/:nasId/ping - Test router connectivity
+mikrotikRoutes.get('/:nasId/ping', async (c) => {
+    const tenantId = c.get('tenantId');
+    const nasId = c.req.param('nasId');
+
+    const nas = await prisma.nAS.findFirst({
+        where: { id: nasId, tenantId },
+    });
+
+    if (!nas) {
+        throw new AppError(404, 'Router not found');
+    }
+
+    const result = await mikrotikService.pingRouter(nas.ipAddress);
+
+    return c.json({
+        routerId: nas.id,
+        routerName: nas.name,
+        ipAddress: nas.ipAddress,
+        ...result,
+    });
+});
+
+// GET /api/mikrotik/:nasId/active-sessions - Get real-time active sessions from MikroTik
+mikrotikRoutes.get('/:nasId/active-sessions', async (c) => {
+    const tenantId = c.get('tenantId');
+    const nasId = c.req.param('nasId');
+
+    const nas = await prisma.nAS.findFirst({
+        where: { id: nasId, tenantId },
+    });
+
+    if (!nas) {
+        throw new AppError(404, 'Router not found');
+    }
+
+    try {
+        const sessions = await mikrotikService.getActiveSessions(nas);
+        return c.json({
+            sessions,
+            total: sessions.length,
+            source: 'mikrotik',
+        });
+    } catch (error) {
+        // Fallback to database if MikroTik connection fails
+        const dbSessions = await prisma.session.findMany({
+            where: { nasId, stopTime: null },
+            include: { customer: { select: { id: true, name: true, username: true } } },
+            take: 100,
+        });
+
+        return c.json({
+            sessions: dbSessions.map(s => ({
+                name: s.username,
+                address: s.framedIp,
+                callerId: s.macAddress,
+                uptime: formatUptime(Math.floor((Date.now() - s.startTime.getTime()) / 1000)),
+            })),
+            total: dbSessions.length,
+            source: 'database',
+            error: 'Could not connect to router',
+        });
+    }
+});
+
 // Helper function to format uptime
 function formatUptime(seconds: number): string {
     const days = Math.floor(seconds / 86400);
@@ -213,3 +278,5 @@ function formatUptime(seconds: number): string {
 
     return parts.join(' ');
 }
+
+import { mikrotikService } from '../services/mikrotik.service.js';

@@ -4,6 +4,7 @@ import { prisma } from '../lib/prisma.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { createAuditLog } from '../lib/audit.js';
+import { mikrotikService } from '../services/mikrotik.service.js';
 import type { ConnectionType, CustomerStatus } from '@prisma/client';
 
 export const customerRoutes = new Hono();
@@ -29,7 +30,7 @@ const createCustomerSchema = z.object({
     houseNumber: z.string().optional(),
 });
 
-const updateCustomerSchema = createCustomerSchema.partial();
+const updateCustomerSchema = createCustomerSchema.omit({ password: true }).partial();
 
 const rechargeSchema = z.object({
     amount: z.number().positive(),
@@ -358,16 +359,30 @@ customerRoutes.post('/:id/mac-reset', async (c) => {
 
     const customer = await prisma.customer.findFirst({
         where: { id: customerId, tenantId, deletedAt: null },
+        include: { nas: true },
     });
 
     if (!customer) {
         throw new AppError(404, 'Customer not found');
     }
 
+    const previousMac = customer.lastMac;
+
+    // Clear MAC in database
     await prisma.customer.update({
         where: { id: customerId },
         data: { lastMac: null },
     });
+
+    // Clear MAC on MikroTik router if customer has a NAS assigned
+    if (customer.nas) {
+        try {
+            await mikrotikService.clearMacBinding(customer.nas, customer.username);
+        } catch (error) {
+            // Log error but don't fail - database is already updated
+            console.error('Failed to clear MAC on router:', error);
+        }
+    }
 
     // Audit log
     await createAuditLog({
@@ -375,7 +390,7 @@ customerRoutes.post('/:id/mac-reset', async (c) => {
         targetType: 'Customer',
         targetId: customer.id,
         targetName: customer.username,
-        details: `MAC reset for ${customer.name}${customer.lastMac ? ` (was: ${customer.lastMac})` : ''}`,
+        details: `MAC reset for ${customer.name}${previousMac ? ` (was: ${previousMac})` : ''}`,
         user,
     });
 
@@ -397,8 +412,17 @@ customerRoutes.post('/:id/disconnect', async (c) => {
         throw new AppError(404, 'Customer not found');
     }
 
-    // TODO: Send CoA disconnect to RADIUS/MikroTik
-    // For now, just close active sessions in database
+    // Disconnect from MikroTik router
+    let disconnectedFromRouter = false;
+    if (customer.nas) {
+        try {
+            disconnectedFromRouter = await mikrotikService.disconnectUser(customer.nas, customer.username);
+        } catch (error) {
+            console.error('Failed to disconnect from router:', error);
+        }
+    }
+
+    // Close active sessions in database
     await prisma.session.updateMany({
         where: { customerId, stopTime: null },
         data: { stopTime: new Date(), terminateCause: 'Admin-Disconnect' },
@@ -410,7 +434,7 @@ customerRoutes.post('/:id/disconnect', async (c) => {
         targetType: 'Customer',
         targetId: customer.id,
         targetName: customer.username,
-        details: `Force disconnected ${customer.name} from ${customer.nas?.name ?? 'router'}`,
+        details: `Force disconnected ${customer.name} from ${customer.nas?.name ?? 'router'}${disconnectedFromRouter ? ' (via API)' : ''}`,
         user,
     });
 
@@ -658,4 +682,281 @@ customerRoutes.get('/:id/transactions', async (c) => {
         mpesaTransactions,
         manualTransactions,
     });
+});
+
+// ==================== MikroTik API Integration ====================
+
+// Helper to get NAS info for MikroTik connection
+async function getNasForCustomer(customerId: string, tenantId: string) {
+    const customer = await prisma.customer.findFirst({
+        where: { id: customerId, tenantId, deletedAt: null },
+        include: { nas: true },
+    });
+
+    if (!customer) {
+        throw new AppError(404, 'Customer not found');
+    }
+
+    if (!customer.nas) {
+        throw new AppError(400, 'Customer is not assigned to a router');
+    }
+
+    return { customer, nas: customer.nas };
+}
+
+// POST /api/customers/:id/mac-lock - Lock MAC address
+customerRoutes.post('/:id/mac-lock', async (c) => {
+    const tenantId = c.get('tenantId');
+    const user = c.get('user');
+    const customerId = c.req.param('id');
+
+    const { customer, nas } = await getNasForCustomer(customerId, tenantId);
+
+    // Get current MAC from active session or database
+    const session = await mikrotikService.findActiveSession(nas, customer.username);
+    const macAddress = session?.callerId || customer.lastMac;
+
+    if (!macAddress) {
+        throw new AppError(400, 'No MAC address found for this customer. They may need to connect first.');
+    }
+
+    await mikrotikService.lockMacAddress(nas, customer.username, macAddress);
+
+    // Update database
+    await prisma.customer.update({
+        where: { id: customerId },
+        data: { lastMac: macAddress },
+    });
+
+    await createAuditLog({
+        action: 'MAC_LOCK',
+        targetType: 'Customer',
+        targetId: customer.id,
+        targetName: customer.username,
+        details: `MAC locked to ${macAddress}`,
+        user,
+    });
+
+    return c.json({ success: true, message: 'MAC address locked', macAddress });
+});
+
+// GET /api/customers/:id/live-status - Get real-time status from MikroTik
+customerRoutes.get('/:id/live-status', async (c) => {
+    const tenantId = c.get('tenantId');
+    const customerId = c.req.param('id');
+
+    const { customer, nas } = await getNasForCustomer(customerId, tenantId);
+
+    try {
+        const session = await mikrotikService.findActiveSession(nas, customer.username);
+
+        if (session) {
+            return c.json({
+                isOnline: true,
+                ipAddress: session.address,
+                macAddress: session.callerId,
+                uptime: session.uptime,
+                sessionId: session.sessionId,
+            });
+        } else {
+            // Check last session from database for "last seen"
+            const lastSession = await prisma.session.findFirst({
+                where: { customerId },
+                orderBy: { stopTime: 'desc' },
+            });
+
+            let lastSeenAgo = 'Never';
+            if (lastSession?.stopTime) {
+                const diffMs = Date.now() - lastSession.stopTime.getTime();
+                const diffMins = Math.floor(diffMs / 60000);
+                if (diffMins < 60) lastSeenAgo = `${diffMins}m ago`;
+                else if (diffMins < 1440) lastSeenAgo = `${Math.floor(diffMins / 60)}h ago`;
+                else lastSeenAgo = `${Math.floor(diffMins / 1440)}d ago`;
+            }
+
+            return c.json({
+                isOnline: false,
+                lastSeenAgo,
+                lastIp: customer.lastIp,
+                lastMac: customer.lastMac,
+            });
+        }
+    } catch (error) {
+        // If router connection fails, return database info
+        return c.json({
+            isOnline: false,
+            error: 'Could not connect to router',
+            lastIp: customer.lastIp,
+            lastMac: customer.lastMac,
+        });
+    }
+});
+
+// POST /api/customers/:id/override-plan - Apply custom bandwidth
+const overridePlanSchema = z.object({
+    downloadMbps: z.number().min(1).max(1000),
+    uploadMbps: z.number().min(1).max(1000),
+});
+
+customerRoutes.post('/:id/override-plan', async (c) => {
+    const tenantId = c.get('tenantId');
+    const user = c.get('user');
+    const customerId = c.req.param('id');
+    const body = await c.req.json();
+    const { downloadMbps, uploadMbps } = overridePlanSchema.parse(body);
+
+    const { customer, nas } = await getNasForCustomer(customerId, tenantId);
+
+    await mikrotikService.setUserQueue(nas, customer.username, downloadMbps, uploadMbps);
+
+    await createAuditLog({
+        action: 'OVERRIDE_PLAN',
+        targetType: 'Customer',
+        targetId: customer.id,
+        targetName: customer.username,
+        details: `Bandwidth set to ${downloadMbps}M/${uploadMbps}M`,
+        user,
+    });
+
+    return c.json({ success: true, message: `Bandwidth set to ${downloadMbps}M down / ${uploadMbps}M up` });
+});
+
+// POST /api/customers/:id/speed-boost - Temporary speed boost
+const speedBoostSchema = z.object({
+    downloadMbps: z.number().min(1).max(1000),
+    uploadMbps: z.number().min(1).max(1000),
+    durationMinutes: z.number().min(1).max(1440), // Max 24 hours
+});
+
+customerRoutes.post('/:id/speed-boost', async (c) => {
+    const tenantId = c.get('tenantId');
+    const user = c.get('user');
+    const customerId = c.req.param('id');
+    const body = await c.req.json();
+    const { downloadMbps, uploadMbps, durationMinutes } = speedBoostSchema.parse(body);
+
+    const { customer, nas } = await getNasForCustomer(customerId, tenantId);
+
+    // Get original speeds from package
+    const pkg = customer.packageId ? await prisma.package.findUnique({
+        where: { id: customer.packageId },
+    }) : null;
+
+    const originalDownload = pkg?.downloadSpeed || 10;
+    const originalUpload = pkg?.uploadSpeed || 5;
+
+    await mikrotikService.setTemporaryBoost(
+        nas,
+        customer.username,
+        downloadMbps,
+        uploadMbps,
+        durationMinutes,
+        originalDownload,
+        originalUpload
+    );
+
+    await createAuditLog({
+        action: 'SPEED_BOOST',
+        targetType: 'Customer',
+        targetId: customer.id,
+        targetName: customer.username,
+        details: `Speed boost ${downloadMbps}M/${uploadMbps}M for ${durationMinutes} minutes`,
+        user,
+    });
+
+    return c.json({
+        success: true,
+        message: `Speed boosted to ${downloadMbps}M down / ${uploadMbps}M up for ${durationMinutes} minutes`
+    });
+});
+
+// POST /api/customers/:id/assign-ip - Assign static IP
+const assignIpSchema = z.object({
+    ipAddress: z.string().ip(),
+});
+
+customerRoutes.post('/:id/assign-ip', async (c) => {
+    const tenantId = c.get('tenantId');
+    const user = c.get('user');
+    const customerId = c.req.param('id');
+    const body = await c.req.json();
+    const { ipAddress } = assignIpSchema.parse(body);
+
+    const { customer, nas } = await getNasForCustomer(customerId, tenantId);
+
+    await mikrotikService.assignStaticIp(nas, customer.username, ipAddress);
+
+    // Update database
+    await prisma.customer.update({
+        where: { id: customerId },
+        data: { lastIp: ipAddress },
+    });
+
+    await createAuditLog({
+        action: 'ASSIGN_STATIC_IP',
+        targetType: 'Customer',
+        targetId: customer.id,
+        targetName: customer.username,
+        details: `Static IP assigned: ${ipAddress}`,
+        user,
+    });
+
+    return c.json({ success: true, message: `Static IP ${ipAddress} assigned` });
+});
+
+// GET /api/customers/:id/bandwidth - Live bandwidth stats
+customerRoutes.get('/:id/bandwidth', async (c) => {
+    const tenantId = c.get('tenantId');
+    const customerId = c.req.param('id');
+
+    const { customer, nas } = await getNasForCustomer(customerId, tenantId);
+
+    const bandwidth = await mikrotikService.getUserBandwidth(nas, customer.username);
+
+    if (!bandwidth) {
+        return c.json({
+            online: false,
+            message: 'User is not currently connected'
+        });
+    }
+
+    return c.json({
+        online: true,
+        downloadBps: bandwidth.rxBps,
+        uploadBps: bandwidth.txBps,
+        downloadMbps: (bandwidth.rxBps * 8 / 1000000).toFixed(2),
+        uploadMbps: (bandwidth.txBps * 8 / 1000000).toFixed(2),
+    });
+});
+
+// POST /api/customers/:id/send-message - Send message to user
+const sendMessageSchema = z.object({
+    message: z.string().min(1).max(500),
+});
+
+customerRoutes.post('/:id/send-message', async (c) => {
+    const tenantId = c.get('tenantId');
+    const user = c.get('user');
+    const customerId = c.req.param('id');
+    const body = await c.req.json();
+    const { message } = sendMessageSchema.parse(body);
+
+    const { customer, nas } = await getNasForCustomer(customerId, tenantId);
+
+    const sent = await mikrotikService.sendMessage(nas, customer.username, message);
+
+    if (!sent) {
+        throw new AppError(400, 'Could not send message - user may be offline');
+    }
+
+    await createAuditLog({
+        action: 'SEND_MESSAGE',
+        targetType: 'Customer',
+        targetId: customer.id,
+        targetName: customer.username,
+        details: `Message sent: ${message.substring(0, 50)}...`,
+        user,
+    });
+
+    return c.json({ success: true, message: 'Message sent' });
 });

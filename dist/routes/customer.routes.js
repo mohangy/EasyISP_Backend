@@ -24,7 +24,7 @@ const createCustomerSchema = z.object({
     apartmentNumber: z.string().optional(),
     houseNumber: z.string().optional(),
 });
-const updateCustomerSchema = createCustomerSchema.partial();
+const updateCustomerSchema = createCustomerSchema.omit({ password: true }).partial();
 const rechargeSchema = z.object({
     amount: z.number().positive(),
     description: z.string().optional(),
