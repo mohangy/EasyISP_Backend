@@ -396,7 +396,7 @@ export const smsService = {
     /**
      * Send SMS using tenant's configured provider
      */
-    async sendSms(tenantId: string, phone: string, message: string): Promise<SmsResult> {
+    async sendSms(tenantId: string, phone: string, message: string, initiator?: string): Promise<SmsResult> {
         const tenant = await prisma.tenant.findUnique({
             where: { id: tenantId },
             select: { smsProvider: true, smsConfig: true, smsSenderId: true, smsApiKey: true },
@@ -429,6 +429,7 @@ export const smsService = {
                     message,
                     status: result.success ? 'SENT' : 'FAILED',
                     provider: tenant.smsProvider,
+                    initiator: initiator || 'system',
                 },
             });
         } catch (logError: any) {

@@ -83,6 +83,7 @@ smsRoutes.get('/', async (c) => {
             status: log.status.toLowerCase(),
             provider: log.provider,
             cost: log.cost,
+            initiator: log.initiator,
             createdAt: log.createdAt,
         })),
         stats: {
@@ -123,7 +124,7 @@ smsRoutes.post('/', async (c) => {
     // Send SMS via unified service
     const results = await Promise.all(
         recipients.map(async (recipient) => {
-            const result = await smsService.sendSms(tenantId, recipient, data.message);
+            const result = await smsService.sendSms(tenantId, recipient, data.message, 'admin_sent');
             return { recipient, ...result };
         })
     );
@@ -151,6 +152,31 @@ smsRoutes.post('/', async (c) => {
         },
         201
     );
+});
+
+// GET /api/sms/:id - Get single SMS details
+smsRoutes.get('/:id', async (c) => {
+    const tenantId = c.get('tenantId');
+    const id = c.req.param('id');
+
+    const log = await prisma.sMSLog.findUnique({
+        where: { id, tenantId },
+    });
+
+    if (!log) {
+        throw new AppError(404, 'SMS log not found');
+    }
+
+    return c.json({
+        id: log.id,
+        recipient: log.recipient,
+        message: log.message,
+        status: log.status.toLowerCase(),
+        provider: log.provider,
+        cost: log.cost,
+        initiator: log.initiator,
+        createdAt: log.createdAt,
+    });
 });
 
 // DELETE /api/sms - Clear all logs
