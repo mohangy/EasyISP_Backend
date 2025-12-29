@@ -596,3 +596,50 @@ customerRoutes.post('/:id/activate', async (c) => {
 
     return c.json({ success: true, message: 'Customer activated' });
 });
+
+// GET /api/customers/:id/transactions - Get customer transactions/payment history
+customerRoutes.get('/:id/transactions', async (c) => {
+    const tenantId = c.get('tenantId');
+    const customerId = c.req.param('id');
+
+    const customer = await prisma.customer.findFirst({
+        where: { id: customerId, tenantId, deletedAt: null },
+    });
+
+    if (!customer) {
+        throw new AppError(404, 'Customer not found');
+    }
+
+    // Get all payments for this customer
+    const payments = await prisma.payment.findMany({
+        where: { customerId, tenantId },
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+    });
+
+    // Format response for frontend
+    const mpesaTransactions = payments
+        .filter(p => p.method === 'MPESA')
+        .map(p => ({
+            id: p.id,
+            trxDate: p.createdAt.toISOString(),
+            trxCode: p.transactionId || p.id.slice(0, 10).toUpperCase(),
+            paybill: '888880', // Could be from tenant settings
+            amount: p.amount,
+            phone: p.phone || customer.phone || '',
+        }));
+
+    const manualTransactions = payments
+        .filter(p => p.method !== 'MPESA')
+        .map(p => ({
+            id: p.id,
+            yourRef: p.transactionId || p.description || 'Manual Recharge',
+            amount: p.amount,
+            trxDate: p.createdAt.toISOString(),
+        }));
+
+    return c.json({
+        mpesaTransactions,
+        manualTransactions,
+    });
+});
