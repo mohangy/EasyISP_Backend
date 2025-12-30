@@ -19,6 +19,9 @@ const createNasSchema = z.object({
     apiUsername: z.string().optional(),
     apiPassword: z.string().optional(),
     apiPort: z.number().optional().default(8728),
+    latitude: z.number().optional(),
+    longitude: z.number().optional(),
+    location: z.string().optional(),
 });
 
 const updateNasSchema = createNasSchema.partial();
@@ -121,6 +124,9 @@ nasRoutes.get('/:id', requirePermission('routers:details_view'), async (c) => {
         memoryTotal: nas.memoryTotal,
         uptime: nas.uptime,
         routerOsVersion: nas.routerOsVersion,
+        latitude: nas.latitude,
+        longitude: nas.longitude,
+        location: nas.location,
         customerCount: nas._count.customers,
         lastSeen: nas.lastSeen,
         createdAt: nas.createdAt,

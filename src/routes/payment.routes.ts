@@ -83,6 +83,76 @@ authenticatedRoutes.get('/electronic', requirePermission('payments:view_electron
     });
 });
 
+// GET /api/payments/mpesa/stats - M-Pesa statistics
+authenticatedRoutes.get('/mpesa/stats', requirePermission('payments:view_electronic'), async (c) => {
+    const tenantId = c.get('tenantId');
+
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    // Get aggregate stats
+    const [todayStats, monthStats, pendingCount, lastPayment] = await Promise.all([
+        prisma.payment.aggregate({
+            where: {
+                tenantId,
+                method: 'MPESA',
+                status: 'COMPLETED',
+                createdAt: { gte: startOfToday },
+            },
+            _sum: { amount: true },
+            _count: true,
+        }),
+        prisma.payment.aggregate({
+            where: {
+                tenantId,
+                method: 'MPESA',
+                status: 'COMPLETED',
+                createdAt: { gte: startOfMonth },
+            },
+            _sum: { amount: true },
+            _count: true,
+        }),
+        prisma.payment.count({
+            where: {
+                tenantId,
+                method: 'MPESA',
+                status: 'PENDING',
+            },
+        }),
+        prisma.payment.findFirst({
+            where: {
+                tenantId,
+                method: 'MPESA',
+            },
+            orderBy: { createdAt: 'desc' },
+            select: { createdAt: true },
+        }),
+    ]);
+
+    // Calculate success rate (completed / total * 100)
+    const [completedCount, totalCount] = await Promise.all([
+        prisma.payment.count({
+            where: { tenantId, method: 'MPESA', status: 'COMPLETED' },
+        }),
+        prisma.payment.count({
+            where: { tenantId, method: 'MPESA' },
+        }),
+    ]);
+
+    const successRate = totalCount > 0 ? ((completedCount / totalCount) * 100).toFixed(1) : '0.0';
+
+    return c.json({
+        todayReceived: todayStats._sum.amount ?? 0,
+        todayTransactions: todayStats._count,
+        thisMonthReceived: monthStats._sum.amount ?? 0,
+        thisMonthTransactions: monthStats._count,
+        successRate: parseFloat(successRate),
+        pendingConfirmations: pendingCount,
+        lastSync: lastPayment?.createdAt?.toISOString() ?? null,
+    });
+});
+
 // GET /api/payments/manual - List manual payments
 authenticatedRoutes.get('/manual', requirePermission('payments:view_manual'), async (c) => {
     const tenantId = c.get('tenantId');

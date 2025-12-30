@@ -40,6 +40,9 @@ mapRoutes.get('/data', requirePermission('maps:view'), async (c) => {
             name: true,
             ipAddress: true,
             status: true,
+            latitude: true,
+            longitude: true,
+            location: true,
             _count: { select: { customers: true } },
         },
     });
@@ -65,9 +68,9 @@ mapRoutes.get('/data', requirePermission('maps:view'), async (c) => {
         ipAddress: r.ipAddress,
         status: r.status.toLowerCase(),
         customerCount: r._count.customers,
-        // TODO: Add actual router location from database
-        latitude: null,
-        longitude: null,
+        latitude: r.latitude,
+        longitude: r.longitude,
+        location: r.location,
     }));
 
     // Calculate stats
