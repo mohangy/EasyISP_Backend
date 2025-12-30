@@ -52,7 +52,8 @@ customerRoutes.get('/', async (c) => {
     const pageSize = parseInt(c.req.query('pageSize') ?? '20');
     const search = c.req.query('search');
     const status = c.req.query('status') as CustomerStatus | undefined;
-    const type = c.req.query('type') as ConnectionType | undefined;
+    // Accept both 'type' and 'connectionType' for backwards compatibility
+    const type = (c.req.query('type') || c.req.query('connectionType')) as ConnectionType | undefined;
 
     const where: {
         tenantId: string;
