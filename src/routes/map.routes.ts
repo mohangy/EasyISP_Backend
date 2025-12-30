@@ -28,7 +28,9 @@ mapRoutes.get('/data', requirePermission('maps:view'), async (c) => {
             status: true,
             connectionType: true,
             location: true,
-            package: { select: { name: true } },
+            ipAddress: true,
+            expiresAt: true,
+            package: { select: { id: true, name: true } },
         },
     });
 
@@ -57,7 +59,9 @@ mapRoutes.get('/data', requirePermission('maps:view'), async (c) => {
         longitude: c.longitude,
         status: c.status.toLowerCase(),
         connectionType: c.connectionType.toLowerCase(),
-        package: c.package?.name ?? 'No package',
+        ipAddress: c.ipAddress,
+        expiresAt: c.expiresAt,
+        package: c.package ? { id: c.package.id, name: c.package.name } : null,
         location: c.location,
     }));
 
