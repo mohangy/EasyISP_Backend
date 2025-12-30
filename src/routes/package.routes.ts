@@ -17,10 +17,10 @@ const createPackageSchema = z.object({
     price: z.number().positive(),
     downloadSpeed: z.number().positive(),
     uploadSpeed: z.number().positive(),
-    burstDownload: z.number().positive().optional(),
-    burstUpload: z.number().positive().optional(),
-    sessionTime: z.number().positive().optional(), // Minutes (for hotspot)
-    dataLimit: z.number().positive().optional(), // Bytes
+    burstDownload: z.number().positive().nullable().optional(),
+    burstUpload: z.number().positive().nullable().optional(),
+    sessionTime: z.number().positive().nullable().optional(), // Minutes (for hotspot)
+    dataLimit: z.number().positive().nullable().optional(), // Bytes
     routerIds: z.array(z.string().uuid()).optional(),
     isActive: z.boolean().optional(),
 });
