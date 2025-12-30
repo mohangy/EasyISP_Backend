@@ -200,6 +200,20 @@ packageRoutes.put('/:id', requirePermission('packages:edit'), async (c) => {
         }
     }
 
+    // Prevent disabling if active customers exist
+    if (data.isActive === false && existing.isActive) {
+        const activeUsers = await prisma.customer.count({
+            where: {
+                packageId,
+                deletedAt: null
+            }
+        });
+
+        if (activeUsers > 0) {
+            throw new AppError(400, `Cannot disable package: ${activeUsers} customers are still assigned to it. Please migrate them first.`);
+        }
+    }
+
     const pkg = await prisma.package.update({
         where: { id: packageId },
         data: {

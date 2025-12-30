@@ -2,6 +2,8 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { promises as fs } from 'fs';
+import path from 'path';
 const { hash, compare } = bcrypt;
 const { sign } = jwt;
 import { prisma } from '../lib/prisma.js';
@@ -196,6 +198,63 @@ authRoutes.post('/logout', authMiddleware, async (c) => {
 authRoutes.get('/me', authMiddleware, async (c) => {
     const user = c.get('user');
     return c.json(user);
+});
+
+// Helper to ensure upload dir exists
+const ensureUploadDir = async () => {
+    const uploadDir = path.join(process.cwd(), 'public', 'uploads');
+    try {
+        await fs.access(uploadDir);
+    } catch {
+        await fs.mkdir(uploadDir, { recursive: true });
+    }
+    return uploadDir;
+};
+
+// POST /api/auth/profile-picture
+authRoutes.post('/profile-picture', authMiddleware, async (c) => {
+    const user = c.get('user');
+    const body = await c.req.parseBody();
+    const file = body['profilePicture'];
+
+    if (!file) {
+        throw new AppError(400, "No file uploaded");
+    }
+
+    const uploadDir = await ensureUploadDir();
+    let fileName = '';
+    let buffer: Buffer;
+
+    if (file instanceof File) {
+        fileName = `${user.id}-${Date.now()}${path.extname(file.name)}`;
+        buffer = Buffer.from(await file.arrayBuffer());
+    } else {
+        throw new AppError(400, "Invalid file format");
+    }
+
+    const filePath = path.join(uploadDir, fileName);
+    await fs.writeFile(filePath, buffer);
+
+    const fileUrl = `/uploads/${fileName}`;
+
+    const updatedUser = await prisma.user.update({
+        where: { id: user.id },
+        data: { profilePicture: fileUrl },
+        include: { tenant: true }
+    });
+
+    return c.json({
+        user: {
+            id: updatedUser.id,
+            name: updatedUser.name,
+            email: updatedUser.email,
+            role: updatedUser.role,
+            tenantId: updatedUser.tenantId,
+            addedPermissions: updatedUser.addedPermissions,
+            removedPermissions: updatedUser.removedPermissions,
+            profilePicture: updatedUser.profilePicture
+        }
+    });
 });
 
 // PUT /api/auth/password

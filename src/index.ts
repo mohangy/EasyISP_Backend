@@ -29,10 +29,13 @@ import { vpnRoutes } from './routes/vpn.routes.js';
 import { snmpRoutes } from './routes/snmp.routes.js';
 import { sessionRoutes } from './routes/session.routes.js';
 
+import { serveStatic } from '@hono/node-server/serve-static';
+
 // Initialize Hono app
 const app = new Hono();
 
 // Global middleware
+app.use('/uploads/*', serveStatic({ root: './public' }));
 app.use('*', secureHeaders());
 app.use('*', requestLogger()); // Comprehensive request logging
 app.use('*', cors({

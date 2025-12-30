@@ -142,6 +142,7 @@ model User {
   name               String
   role               Role       @default(STAFF)
   status             UserStatus @default(ACTIVE)
+  profilePicture     String?
   addedPermissions   String[]   @default([])
   removedPermissions String[]   @default([])
   tenantId           String
