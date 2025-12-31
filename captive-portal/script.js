@@ -319,19 +319,74 @@ function closeModal() {
 
 // ============ Phone Input ============
 function validatePhoneInput() {
-    const phone = elements.phoneInput.value.replace(/\D/g, '');
+    // Allow digits and + sign for the input
+    let phone = elements.phoneInput.value.replace(/[^\d+]/g, '');
+
+    // Keep the + only at the start
+    if (phone.includes('+')) {
+        phone = '+' + phone.replace(/\+/g, '');
+    }
+
     elements.phoneInput.value = phone;
 
-    // Enable pay button if valid (9 digits starting with 7 or 1)
-    const isValid = phone.length === 9 && (phone.startsWith('7') || phone.startsWith('1'));
+    // Validate the phone number in any of the supported formats
+    const isValid = isValidKenyanPhone(phone);
     elements.payBtn.disabled = !isValid;
+}
+
+// Check if phone number is valid in any format
+function isValidKenyanPhone(phone) {
+    // Remove + if present
+    const cleaned = phone.replace(/^\+/, '');
+
+    // Format: 254XXXXXXXXX (12 digits, starts with 254)
+    if (cleaned.length === 12 && cleaned.startsWith('254')) {
+        const suffix = cleaned.substring(3);
+        return suffix.startsWith('7') || suffix.startsWith('1');
+    }
+
+    // Format: 07XXXXXXXX or 01XXXXXXXX (10 digits, starts with 0)
+    if (cleaned.length === 10 && cleaned.startsWith('0')) {
+        const suffix = cleaned.substring(1);
+        return suffix.startsWith('7') || suffix.startsWith('1');
+    }
+
+    // Format: 7XXXXXXXX or 1XXXXXXXX (9 digits)
+    if (cleaned.length === 9) {
+        return cleaned.startsWith('7') || cleaned.startsWith('1');
+    }
+
+    return false;
+}
+
+// Normalize phone number to 254XXXXXXXXX format
+function normalizePhoneNumber(phone) {
+    // Remove + and any non-digit characters
+    const cleaned = phone.replace(/\D/g, '');
+
+    // Already in 254XXXXXXXXX format
+    if (cleaned.length === 12 && cleaned.startsWith('254')) {
+        return cleaned;
+    }
+
+    // Format: 07XXXXXXXX or 01XXXXXXXX - remove leading 0
+    if (cleaned.length === 10 && cleaned.startsWith('0')) {
+        return '254' + cleaned.substring(1);
+    }
+
+    // Format: 7XXXXXXXX or 1XXXXXXXX - add 254
+    if (cleaned.length === 9) {
+        return '254' + cleaned;
+    }
+
+    return cleaned;
 }
 
 // ============ Payment Flow ============
 async function initiatePayment() {
     if (!state.selectedPackage) return;
 
-    const phone = '254' + elements.phoneInput.value;
+    const phone = normalizePhoneNumber(elements.phoneInput.value);
 
     // Show payment status inside modal
     showModalSection('payment');
