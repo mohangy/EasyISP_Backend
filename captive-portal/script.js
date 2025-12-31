@@ -96,6 +96,11 @@ const elements = {
     mikrotikForm: document.getElementById('mikrotik-form'),
     formUsername: document.getElementById('form-username'),
     formPassword: document.getElementById('form-password'),
+
+    // Modal
+    phoneModal: document.getElementById('phone-modal'),
+    modalClose: document.getElementById('modal-close'),
+    modalPackageName: document.getElementById('modal-package-name'),
 };
 
 // ============ Initialization ============
@@ -158,7 +163,13 @@ function setupEventListeners() {
     // Phone input
     elements.phoneInput.addEventListener('input', validatePhoneInput);
     elements.payBtn.addEventListener('click', initiatePayment);
-    elements.backBtn.addEventListener('click', () => showSection('packages'));
+    elements.backBtn.addEventListener('click', closeModal);
+
+    // Modal close
+    elements.modalClose?.addEventListener('click', closeModal);
+    elements.phoneModal?.addEventListener('click', (e) => {
+        if (e.target === elements.phoneModal) closeModal();
+    });
 
     // SMS fallback
     elements.showSmsBtn.addEventListener('click', toggleSmsInput);
@@ -252,23 +263,17 @@ function renderPackages() {
 
     elements.packagesList.innerHTML = state.packages.map(pkg => `
         <div class="package-card" data-id="${pkg.id}" data-price="${pkg.price}">
-            <div class="package-info">
-                <h3>${pkg.name}</h3>
-                <div class="package-details">
-                    <span>📶 ${pkg.speed}</span>
-                    <span>📊 ${pkg.data}</span>
-                    <span>⏱️ ${pkg.duration}</span>
-                </div>
-            </div>
-            <div class="package-price">
-                KSH ${pkg.price}
-            </div>
+            <span class="package-name">${pkg.name}</span>
+            <button class="btn btn-buy" data-id="${pkg.id}">Buy</button>
         </div>
     `).join('');
 
-    // Add click handlers
-    document.querySelectorAll('.package-card').forEach(card => {
-        card.addEventListener('click', () => selectPackage(card.dataset.id));
+    // Add click handlers to Buy buttons
+    document.querySelectorAll('.package-card .btn-buy').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            selectPackage(btn.dataset.id);
+        });
     });
 }
 
@@ -277,9 +282,23 @@ function selectPackage(packageId) {
 
     if (state.selectedPackage) {
         elements.selectedPrice.textContent = `KSH ${state.selectedPackage.price}`;
-        showSection('phone');
-        elements.smsFallback.classList.remove('hidden');
+        elements.modalPackageName.textContent = state.selectedPackage.name;
+        openModal();
     }
+}
+
+// ============ Modal Functions ============
+function openModal() {
+    elements.phoneModal.classList.add('active');
+    elements.phoneInput.focus();
+    elements.smsFallback.classList.remove('hidden');
+}
+
+function closeModal() {
+    elements.phoneModal.classList.remove('active');
+    elements.phoneInput.value = '';
+    elements.payBtn.disabled = true;
+    hideError();
 }
 
 // ============ Phone Input ============
