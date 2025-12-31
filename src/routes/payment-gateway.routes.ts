@@ -23,10 +23,38 @@ const gatewaySchema = z.object({
 // LIST
 pgRoutes.get('/', requireRole('ADMIN', 'SUPER_ADMIN'), async (c) => {
     const tenantId = c.get('tenantId');
-    const gateways = await prisma.paymentGateway.findMany({
+    let gateways = await prisma.paymentGateway.findMany({
         where: { tenantId },
         orderBy: { createdAt: 'desc' }
     });
+
+    // Auto-migrate legacy config if new table is empty
+    if (gateways.length === 0) {
+        const tenant = await prisma.tenant.findUnique({
+            where: { id: tenantId }
+        });
+
+        // Check if legacy config exists
+        if (tenant && tenant.mpesaConsumerKey && tenant.mpesaShortcode) {
+            const newGw = await prisma.paymentGateway.create({
+                data: {
+                    tenantId,
+                    type: 'MPESA_API',
+                    name: 'Migrated Gateway',
+                    shortcode: tenant.mpesaShortcode,
+                    consumerKey: tenant.mpesaConsumerKey,
+                    consumerSecret: tenant.mpesaConsumerSecret,
+                    passkey: tenant.mpesaPasskey,
+                    env: tenant.mpesaEnv || 'production',
+                    isDefault: true,
+                    forHotspot: true, // Legacy config applied to all
+                    forPppoe: true
+                }
+            });
+            gateways = [newGw];
+        }
+    }
+
     return c.json(gateways);
 });
 
