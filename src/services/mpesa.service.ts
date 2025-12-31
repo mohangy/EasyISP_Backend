@@ -41,6 +41,53 @@ interface STKQueryResponse {
     ResultDesc: string;
 }
 
+export interface BuyGoodsValidationResult {
+    valid: boolean;
+    errors: string[];
+    configType: 'PAYBILL' | 'BUYGOODS' | 'BANK';
+    details?: {
+        tillNumber?: string;
+        storeNumber?: string;
+        environment?: string;
+    };
+}
+
+/**
+ * Validate M-Pesa BuyGoods configuration
+ * Ensures all required fields are present for BuyGoods transactions
+ */
+export function validateBuyGoodsConfig(config: MpesaConfig): BuyGoodsValidationResult {
+    const errors: string[] = [];
+
+    // Common validations
+    if (!config.consumerKey) errors.push('Consumer Key is required');
+    if (!config.consumerSecret) errors.push('Consumer Secret is required');
+    if (!config.passkey) errors.push('Passkey is required');
+    if (!config.callbackUrl) errors.push('Callback URL is required');
+
+    // BuyGoods-specific validations
+    if (config.subType === 'BUYGOODS') {
+        if (!config.shortcode) errors.push('Till Number (shortcode) is required for BuyGoods');
+        if (!config.storeNumber) errors.push('Store Number (Head Office) is required for BuyGoods STK Push');
+    } else if (config.subType === 'PAYBILL') {
+        if (!config.shortcode) errors.push('Paybill Number (shortcode) is required');
+    } else if (config.subType === 'BANK') {
+        if (!config.shortcode) errors.push('Bank Paybill Number is required');
+        if (!config.accountNumber) errors.push('Target Account Number is required for Bank transfers');
+    }
+
+    return {
+        valid: errors.length === 0,
+        errors,
+        configType: config.subType,
+        details: {
+            tillNumber: config.subType === 'BUYGOODS' ? config.shortcode : undefined,
+            storeNumber: config.storeNumber,
+            environment: config.env,
+        }
+    };
+}
+
 // Token cache per tenant
 const tokenCache: Map<string, { token: string; expiresAt: number }> = new Map();
 
@@ -229,6 +276,21 @@ export async function initiateSTKPush(
     if (!config) {
         throw new Error('M-Pesa not configured for this tenant');
     }
+
+    // Validate configuration before proceeding
+    const validation = validateBuyGoodsConfig(config);
+    if (!validation.valid) {
+        const errorMsg = `M-Pesa configuration invalid: ${validation.errors.join(', ')}`;
+        logger.error({ tenantId, errors: validation.errors, configType: validation.configType }, errorMsg);
+        throw new Error(errorMsg);
+    }
+
+    logger.info({
+        tenantId,
+        configType: validation.configType,
+        tillNumber: validation.details?.tillNumber,
+        storeNumber: validation.details?.storeNumber
+    }, 'Initiating STK Push with validated config');
 
     const token = await getAccessToken(tenantId);
     const baseUrl = getBaseUrl(config.env);

@@ -10,6 +10,7 @@ import {
     createHotspotCustomerFromPayment,
     formatPhoneNumber,
     getTenantMpesaConfig,
+    validateBuyGoodsConfig,
 } from '../services/mpesa.service.js';
 
 export const portalRoutes = new Hono();
@@ -393,6 +394,43 @@ portalRoutes.get('/mpesa/check', async (c) => {
     });
 });
 
+// GET /api/portal/mpesa/validate - Validate M-Pesa configuration for BuyGoods/PayBill
+portalRoutes.get('/mpesa/validate', async (c) => {
+    const tenantId = c.req.query('tenantId');
+
+    if (!tenantId) {
+        throw new AppError(400, 'Tenant ID required');
+    }
+
+    const config = await getTenantMpesaConfig(tenantId);
+
+    if (!config) {
+        return c.json({
+            configured: false,
+            valid: false,
+            errors: ['M-Pesa gateway not configured for this tenant'],
+        });
+    }
+
+    const validation = validateBuyGoodsConfig(config);
+
+    return c.json({
+        configured: true,
+        valid: validation.valid,
+        configType: validation.configType,
+        errors: validation.errors,
+        details: {
+            // Mask sensitive data
+            tillNumber: config.subType === 'BUYGOODS' ? config.shortcode : undefined,
+            paybillNumber: config.subType === 'PAYBILL' ? config.shortcode : undefined,
+            storeNumber: config.storeNumber ? `${config.storeNumber.substring(0, 3)}***` : undefined,
+            environment: config.env,
+            hasPasskey: !!config.passkey,
+            hasCredentials: !!config.consumerKey && !!config.consumerSecret,
+        }
+    });
+});
+
 // POST /api/portal/mpesa/initiate - Initiate STK push for package purchase
 portalRoutes.post('/mpesa/initiate', async (c) => {
     const body = await c.req.json();
@@ -638,11 +676,53 @@ portalRoutes.post('/mpesa/callback', async (c) => {
         const mpesaReceiptNumber = String(getMetaValue('MpesaReceiptNumber') ?? '');
         const amount = Number(getMetaValue('Amount')) || pendingPayment.amount;
         const phone = String(getMetaValue('PhoneNumber') ?? pendingPayment.phone);
+        const transactionType = String(getMetaValue('TransactionType') ?? 'Unknown');
 
         if (!mpesaReceiptNumber) {
             logger.error({ CheckoutRequestID }, 'No receipt number in callback');
             return c.json({ ResultCode: 0, ResultDesc: 'Accepted' });
         }
+
+        // Security: Check for duplicate receipt (replay attack prevention)
+        const existingPayment = await prisma.payment.findFirst({
+            where: { transactionId: mpesaReceiptNumber },
+        });
+
+        if (existingPayment) {
+            logger.warn({
+                CheckoutRequestID,
+                mpesaReceiptNumber,
+                existingPaymentId: existingPayment.id
+            }, 'Duplicate M-Pesa receipt detected - possible replay attack');
+            return c.json({ ResultCode: 0, ResultDesc: 'Accepted' });
+        }
+
+        // Security: Validate amount matches or exceeds package price
+        if (amount < pendingPayment.package.price) {
+            logger.error({
+                CheckoutRequestID,
+                mpesaReceiptNumber,
+                receivedAmount: amount,
+                requiredAmount: pendingPayment.package.price,
+                packageName: pendingPayment.package.name
+            }, 'Payment amount less than package price - rejecting');
+
+            await prisma.pendingHotspotPayment.update({
+                where: { id: pendingPayment.id },
+                data: { status: 'FAILED' },
+            });
+            return c.json({ ResultCode: 0, ResultDesc: 'Accepted' });
+        }
+
+        logger.info({
+            CheckoutRequestID,
+            mpesaReceiptNumber,
+            amount,
+            phone,
+            transactionType,
+            packageName: pendingPayment.package.name,
+            tenantId: pendingPayment.tenantId
+        }, 'M-Pesa callback validated - creating hotspot customer');
 
         // Create hotspot customer
         const result = await createHotspotCustomerFromPayment(
@@ -666,8 +746,10 @@ portalRoutes.post('/mpesa/callback', async (c) => {
         logger.info({
             CheckoutRequestID,
             mpesaReceiptNumber,
-            username: result.username
-        }, 'M-Pesa hotspot payment completed successfully');
+            username: result.username,
+            expiresAt: result.expiresAt,
+            transactionType
+        }, 'M-Pesa hotspot payment completed - customer created successfully');
 
         return c.json({ ResultCode: 0, ResultDesc: 'Accepted' });
     } catch (error) {
