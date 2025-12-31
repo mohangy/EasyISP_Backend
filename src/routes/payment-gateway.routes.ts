@@ -1,0 +1,116 @@
+import { Hono } from 'hono';
+import { z } from 'zod';
+import { prisma } from '../lib/prisma.js';
+import { requireRole } from '../middleware/auth.js';
+import { AppError } from '../middleware/errorHandler.js';
+import { testGateway } from '../services/mpesa.service.js';
+
+const pgRoutes = new Hono();
+
+// Schema
+const gatewaySchema = z.object({
+    type: z.string().default('MPESA_API'),
+    name: z.string().optional(),
+    shortcode: z.string().min(3),
+    consumerKey: z.string().optional(),
+    consumerSecret: z.string().optional(),
+    passkey: z.string().optional(),
+    env: z.enum(['sandbox', 'production']).default('production'),
+    forHotspot: z.boolean().default(false),
+    forPppoe: z.boolean().default(false),
+});
+
+// LIST
+pgRoutes.get('/', requireRole('ADMIN', 'SUPER_ADMIN'), async (c) => {
+    const tenantId = c.get('tenantId');
+    const gateways = await prisma.paymentGateway.findMany({
+        where: { tenantId },
+        orderBy: { createdAt: 'desc' }
+    });
+    return c.json(gateways);
+});
+
+// CREATE
+pgRoutes.post('/', requireRole('ADMIN', 'SUPER_ADMIN'), async (c) => {
+    const tenantId = c.get('tenantId');
+    const body = await c.req.json();
+    const data = gatewaySchema.parse(body);
+
+    // Check if this is the first gateway -> make default
+    const count = await prisma.paymentGateway.count({ where: { tenantId } });
+    const isDefault = count === 0;
+
+    const gw = await prisma.paymentGateway.create({
+        data: {
+            ...data,
+            tenantId,
+            isDefault
+        }
+    });
+
+    return c.json(gw, 201);
+});
+
+// UPDATE
+pgRoutes.put('/:id', requireRole('ADMIN', 'SUPER_ADMIN'), async (c) => {
+    const tenantId = c.get('tenantId');
+    const { id } = c.req.param();
+    const body = await c.req.json();
+    const data = gatewaySchema.partial().parse(body);
+
+    const gw = await prisma.paymentGateway.update({
+        where: { id, tenantId }, // ensure ownership
+        data
+    });
+    return c.json(gw);
+});
+
+// DELETE
+pgRoutes.delete('/:id', requireRole('ADMIN', 'SUPER_ADMIN'), async (c) => {
+    const tenantId = c.get('tenantId');
+    const { id } = c.req.param();
+
+    await prisma.paymentGateway.delete({
+        where: { id, tenantId }
+    });
+
+    return c.json({ success: true });
+});
+
+// SET DEFAULT
+pgRoutes.post('/:id/default', requireRole('ADMIN', 'SUPER_ADMIN'), async (c) => {
+    const tenantId = c.get('tenantId');
+    const { id } = c.req.param();
+
+    // Transaction to unset others and set this one
+    await prisma.$transaction([
+        prisma.paymentGateway.updateMany({
+            where: { tenantId, isDefault: true },
+            data: { isDefault: false }
+        }),
+        prisma.paymentGateway.update({
+            where: { id, tenantId },
+            data: { isDefault: true }
+        })
+    ]);
+
+    return c.json({ success: true });
+});
+
+// TEST
+pgRoutes.post('/:id/test', requireRole('ADMIN', 'SUPER_ADMIN'), async (c) => {
+    const tenantId = c.get('tenantId');
+    const { id } = c.req.param();
+
+    // verify ownership
+    const exists = await prisma.paymentGateway.count({ where: { id, tenantId } });
+    if (!exists) throw new AppError(404, 'Gateway not found');
+
+    const result = await testGateway(id);
+    if (!result.success) {
+        return c.json(result, 400);
+    }
+    return c.json(result);
+});
+
+export { pgRoutes };

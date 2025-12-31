@@ -138,6 +138,7 @@ model Tenant {
   accounts   ChartOfAccount[]
   vpnPeers   VPNPeer[]
   pendingHotspotPayments PendingHotspotPayment[]
+  paymentGateways PaymentGateway[]
 
   @@index([status])
   @@index([isActivated])
@@ -519,4 +520,26 @@ model PendingHotspotPayment {
   @@index([tenantId, status])
   @@index([checkoutRequestId])
   @@index([transactionCode])
+}
+
+model PaymentGateway {
+  id              String   @id @default(uuid())
+  tenantId        String
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  type            String   // "MPESA_API", "MPESA_NO_API"
+  name            String?  // e.g. "Main Paybill"
+  shortcode       String
+  consumerKey     String?
+  consumerSecret  String?
+  passkey         String?
+  env             String   @default("production")
+  isDefault       Boolean  @default(false)
+  forHotspot      Boolean  @default(false)
+  forPppoe        Boolean  @default(false)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([tenantId])
 }

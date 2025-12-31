@@ -43,30 +43,41 @@ const tokenCache: Map<string, { token: string; expiresAt: number }> = new Map();
 /**
  * Get M-Pesa config for a tenant
  */
-export async function getTenantMpesaConfig(tenantId: string): Promise<MpesaConfig | null> {
+export async function getTenantMpesaConfig(tenantId: string, purpose?: 'HOTSPOT' | 'PPPOE'): Promise<MpesaConfig | null> {
     const tenant = await prisma.tenant.findUnique({
         where: { id: tenantId },
-        select: {
-            mpesaConsumerKey: true,
-            mpesaConsumerSecret: true,
-            mpesaShortcode: true,
-            mpesaPasskey: true,
-            mpesaCallbackUrl: true,
-            mpesaEnv: true,
-        },
+        select: { mpesaCallbackUrl: true }
     });
 
-    if (!tenant || !tenant.mpesaConsumerKey || !tenant.mpesaConsumerSecret || !tenant.mpesaShortcode) {
+    let gateway = null;
+    if (purpose) {
+        // Find gateway specifically for this purpose
+        gateway = await prisma.paymentGateway.findFirst({
+            where: {
+                tenantId,
+                [purpose === 'HOTSPOT' ? 'forHotspot' : 'forPppoe']: true
+            }
+        });
+    }
+
+    // Fallback to default if no specific gateway found
+    if (!gateway) {
+        gateway = await prisma.paymentGateway.findFirst({
+            where: { tenantId, isDefault: true }
+        });
+    }
+
+    if (!gateway || !gateway.consumerKey || !gateway.consumerSecret || !gateway.shortcode) {
         return null;
     }
 
     return {
-        consumerKey: tenant.mpesaConsumerKey,
-        consumerSecret: tenant.mpesaConsumerSecret,
-        shortcode: tenant.mpesaShortcode,
-        passkey: tenant.mpesaPasskey || '',
-        callbackUrl: tenant.mpesaCallbackUrl || '',
-        env: (tenant.mpesaEnv as 'sandbox' | 'production') || 'production',
+        consumerKey: gateway.consumerKey,
+        consumerSecret: gateway.consumerSecret,
+        shortcode: gateway.shortcode,
+        passkey: gateway.passkey || '',
+        callbackUrl: tenant?.mpesaCallbackUrl || '',
+        env: (gateway.env as 'sandbox' | 'production') || 'production',
     };
 }
 
@@ -82,16 +93,17 @@ function getBaseUrl(env: 'sandbox' | 'production'): string {
 /**
  * Get OAuth access token (cached)
  */
-export async function getAccessToken(tenantId: string): Promise<string> {
-    // Check cache
-    const cached = tokenCache.get(tenantId);
-    if (cached && cached.expiresAt > Date.now()) {
-        return cached.token;
-    }
-
-    const config = await getTenantMpesaConfig(tenantId);
+export async function getAccessToken(tenantId: string, purpose?: 'HOTSPOT' | 'PPPOE'): Promise<string> {
+    const config = await getTenantMpesaConfig(tenantId, purpose);
     if (!config) {
         throw new Error('M-Pesa not configured for this tenant');
+    }
+
+    // Cache key specific to this set of credentials
+    const cacheKey = `${tenantId}:${config.consumerKey}`;
+    const cached = tokenCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+        return cached.token;
     }
 
     const baseUrl = getBaseUrl(config.env);
@@ -113,7 +125,7 @@ export async function getAccessToken(tenantId: string): Promise<string> {
     const data = await response.json() as { access_token: string; expires_in: string };
 
     // Cache token (expires in ~1 hour, cache for 50 minutes)
-    tokenCache.set(tenantId, {
+    tokenCache.set(cacheKey, {
         token: data.access_token,
         expiresAt: Date.now() + 50 * 60 * 1000,
     });
@@ -122,27 +134,36 @@ export async function getAccessToken(tenantId: string): Promise<string> {
 }
 
 /**
- * Test M-Pesa Connection
+ * Test Specific Gateway Connection
  */
-export async function testConnection(tenantId: string): Promise<{ success: boolean; message: string }> {
+export async function testGateway(gatewayId: string): Promise<{ success: boolean; message: string }> {
     try {
-        // Force refresh of token to verify current credentials
-        tokenCache.delete(tenantId);
-        await getAccessToken(tenantId);
+        const gw = await prisma.paymentGateway.findUnique({ where: { id: gatewayId } });
+        if (!gw) throw new Error("Gateway not found");
+        if (!gw.consumerKey || !gw.consumerSecret) throw new Error("Gateway is missing API credentials");
+
+        const baseUrl = getBaseUrl(gw.env as 'sandbox' | 'production');
+        const auth = Buffer.from(`${gw.consumerKey}:${gw.consumerSecret}`).toString('base64');
+
+        const response = await fetch(`${baseUrl}/oauth/v1/generate?grant_type=client_credentials`, {
+            method: 'GET',
+            headers: { Authorization: `Basic ${auth}` },
+        });
+
+        if (!response.ok) {
+            const text = await response.text();
+            let msg = 'Connection failed';
+            try {
+                const parsed = JSON.parse(text);
+                if (parsed.errorMessage) msg = parsed.errorMessage;
+            } catch (e) { }
+            return { success: false, message: msg };
+        }
+
         return { success: true, message: 'Connection successful! Credentials are valid.' };
     } catch (error: any) {
-        logger.error({ error, tenantId }, 'M-Pesa connection test failed');
-        // Extract meaningful error message if possible
-        let msg = 'Connection failed. Please check your credentials.';
-        if (error.message) msg = error.message;
-
-        try {
-            // If it's a JSON string error from the API
-            const parsed = JSON.parse(error.message);
-            if (parsed.errorMessage) msg = parsed.errorMessage;
-        } catch (e) { }
-
-        return { success: false, message: msg };
+        logger.error({ error, gatewayId }, 'Gateway connection test failed');
+        return { success: false, message: error.message || 'Connection failed' };
     }
 }
 
