@@ -122,6 +122,31 @@ export async function getAccessToken(tenantId: string): Promise<string> {
 }
 
 /**
+ * Test M-Pesa Connection
+ */
+export async function testConnection(tenantId: string): Promise<{ success: boolean; message: string }> {
+    try {
+        // Force refresh of token to verify current credentials
+        tokenCache.delete(tenantId);
+        await getAccessToken(tenantId);
+        return { success: true, message: 'Connection successful! Credentials are valid.' };
+    } catch (error: any) {
+        logger.error({ error, tenantId }, 'M-Pesa connection test failed');
+        // Extract meaningful error message if possible
+        let msg = 'Connection failed. Please check your credentials.';
+        if (error.message) msg = error.message;
+
+        try {
+            // If it's a JSON string error from the API
+            const parsed = JSON.parse(error.message);
+            if (parsed.errorMessage) msg = parsed.errorMessage;
+        } catch (e) { }
+
+        return { success: false, message: msg };
+    }
+}
+
+/**
  * Format phone number for M-Pesa (254XXXXXXXXX)
  */
 export function formatPhoneNumber(phone: string): string {
