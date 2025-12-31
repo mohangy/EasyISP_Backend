@@ -1,10 +1,13 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
-import { requireRole } from '../middleware/auth.js';
+import { authMiddleware, requireRole } from '../middleware/auth.js';
 import { smsService } from '../services/sms.service.js';
 
 export const smsGatewayRoutes = new Hono<{ Variables: { tenantId: string } }>();
+
+// Apply auth middleware
+smsGatewayRoutes.use('*', authMiddleware);
 
 const smsGatewaySchema = z.object({
     provider: z.string(),

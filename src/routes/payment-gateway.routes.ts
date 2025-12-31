@@ -1,11 +1,14 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
-import { requireRole } from '../middleware/auth.js';
+import { authMiddleware, requireRole } from '../middleware/auth.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { testGateway } from '../services/mpesa.service.js';
 
 const pgRoutes = new Hono();
+
+// Apply auth middleware
+pgRoutes.use('*', authMiddleware);
 
 // Schema
 const gatewaySchema = z.object({
