@@ -479,28 +479,67 @@ export const smsService = {
     },
 
     /**
-     * Send SMS using tenant's configured provider
+     * Get Gateway Configuration based on purpose
      */
-    async sendSms(tenantId: string, phone: string, message: string, initiator?: string): Promise<SmsResult> {
+    async getGatewayConfig(tenantId: string, purpose?: 'HOTSPOT' | 'PPPOE') {
+        let gateway = null;
+        if (purpose) {
+            gateway = await prisma.smsGateway.findFirst({
+                where: {
+                    tenantId,
+                    [purpose === 'HOTSPOT' ? 'forHotspot' : 'forPppoe']: true
+                }
+            });
+        }
+
+        if (!gateway) {
+            gateway = await prisma.smsGateway.findFirst({ where: { tenantId, isDefault: true } });
+        }
+
+        if (gateway) {
+            return {
+                provider: gateway.provider,
+                config: {
+                    ...(gateway.config as object || {}),
+                    apiKey: gateway.apiKey,
+                    senderId: gateway.senderId,
+                    username: gateway.username
+                }
+            };
+        }
+
+        // Fallback to legacy configuration
         const tenant = await prisma.tenant.findUnique({
             where: { id: tenantId },
-            select: { smsProvider: true, smsConfig: true, smsSenderId: true, smsApiKey: true },
+            select: { smsProvider: true, smsConfig: true, smsApiKey: true, smsSenderId: true }
         });
 
-        if (!tenant?.smsProvider) {
+        if (tenant?.smsProvider) {
+            return {
+                provider: tenant.smsProvider,
+                config: {
+                    ...(tenant.smsConfig as object || {}),
+                    apiKey: tenant.smsApiKey,
+                    senderId: tenant.smsSenderId,
+                }
+            };
+        }
+        return null;
+    },
+
+    /**
+     * Send SMS using tenant's configured provider
+     */
+    async sendSms(tenantId: string, phone: string, message: string, initiator?: string, purpose?: 'HOTSPOT' | 'PPPOE'): Promise<SmsResult> {
+        const gw = await this.getGatewayConfig(tenantId, purpose);
+
+        if (!gw) {
             return { success: false, error: 'No SMS provider configured' };
         }
 
-        // Build config from both smsConfig (JSON) and legacy fields
-        const config = {
-            ...(tenant.smsConfig as object || {}),
-            apiKey: tenant.smsApiKey,
-            senderId: tenant.smsSenderId,
-        };
-
-        const adapter = this.getAdapter(tenant.smsProvider, config);
+        const adapter = this.getAdapter(gw.provider, gw.config);
         if (!adapter) {
-            return { success: false, error: `Unsupported SMS provider: ${tenant.smsProvider}` };
+            return { success: false, error: `Unsupported SMS provider: ${gw.provider}` };
         }
 
         const result = await adapter.sendSms(phone, message);
@@ -513,7 +552,7 @@ export const smsService = {
                     recipient: phone,
                     message,
                     status: result.success ? 'SENT' : 'FAILED',
-                    provider: tenant.smsProvider,
+                    provider: gw.provider,
                     initiator: initiator || 'system',
                     providerMessageId: result.messageId,
                 },
@@ -529,23 +568,15 @@ export const smsService = {
      * Get SMS balance for tenant's provider
      */
     async getBalance(tenantId: string): Promise<BalanceResult> {
-        const tenant = await prisma.tenant.findUnique({
-            where: { id: tenantId },
-            select: { smsProvider: true, smsConfig: true, smsApiKey: true },
-        });
+        const gw = await this.getGatewayConfig(tenantId);
 
-        if (!tenant?.smsProvider) {
+        if (!gw) {
             return { success: false, error: 'No SMS provider configured' };
         }
 
-        const config = {
-            ...(tenant.smsConfig as object || {}),
-            apiKey: tenant.smsApiKey,
-        };
-
-        const adapter = this.getAdapter(tenant.smsProvider, config);
+        const adapter = this.getAdapter(gw.provider, gw.config);
         if (!adapter) {
-            return { success: false, error: `Unsupported SMS provider: ${tenant.smsProvider}` };
+            return { success: false, error: `Unsupported SMS provider: ${gw.provider}` };
         }
 
         return adapter.getBalance();
@@ -555,23 +586,15 @@ export const smsService = {
      * Get delivery status
      */
     async getDeliveryStatus(tenantId: string, messageId: string): Promise<DeliveryStatusResult> {
-        const tenant = await prisma.tenant.findUnique({
-            where: { id: tenantId },
-            select: { smsProvider: true, smsConfig: true, smsApiKey: true },
-        });
+        const gw = await this.getGatewayConfig(tenantId);
 
-        if (!tenant?.smsProvider) {
+        if (!gw) {
             return { success: false, status: 'Error', error: 'No SMS provider configured' };
         }
 
-        const config = {
-            ...(tenant.smsConfig as object || {}),
-            apiKey: tenant.smsApiKey,
-        };
-
-        const adapter = this.getAdapter(tenant.smsProvider, config);
+        const adapter = this.getAdapter(gw.provider, gw.config);
         if (!adapter) {
-            return { success: false, status: 'Error', error: `Unsupported SMS provider: ${tenant.smsProvider}` };
+            return { success: false, status: 'Error', error: `Unsupported SMS provider: ${gw.provider}` };
         }
 
         return adapter.getDeliveryStatus(messageId);
@@ -591,8 +614,30 @@ export const smsService = {
             return { success: true, message: `Connection successful. Balance: ${balanceResult.balance}` };
         }
 
-        // If balance check not supported, try sending to a test number
+        // If balance check not supported, assume success if adapter didn't crash, or return error
+        // Many adapters return error for balance check
+        if (balanceResult.error && balanceResult.error.includes('not supported')) {
+            return { success: true, message: 'Connection assumed successful (Balance check not supported)' };
+        }
+
         return { success: false, message: balanceResult.error || 'Connection test failed' };
+    },
+
+    /**
+     * Test a stored gateway by ID
+     */
+    async testGateway(gatewayId: string): Promise<{ success: boolean; message: string }> {
+        const gw = await prisma.smsGateway.findUnique({ where: { id: gatewayId } });
+        if (!gw) return { success: false, message: "Gateway not found" };
+
+        const config = {
+            ...(gw.config as object || {}),
+            apiKey: gw.apiKey,
+            senderId: gw.senderId,
+            username: gw.username
+        };
+
+        return this.testConnection(gw.provider, config);
     },
 
     /**

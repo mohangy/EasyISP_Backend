@@ -21,6 +21,7 @@ import { mikrotikRoutes } from './routes/mikrotik.routes.js';
 import { wizardRoutes } from './routes/wizard.routes.js';
 import { voucherRoutes } from './routes/voucher.routes.js';
 import { smsRoutes } from './routes/sms.routes.js';
+import { smsGatewayRoutes } from './routes/sms-gateway.routes.js';
 import { mapRoutes } from './routes/map.routes.js';
 import { superAdminRoutes } from './routes/superAdmin.routes.js';
 // Phase 6: Advanced Features
@@ -71,6 +72,7 @@ api.route('/mikrotik', mikrotikRoutes);
 api.route('/wizard', wizardRoutes);
 api.route('/vouchers', voucherRoutes);
 api.route('/sms', smsRoutes);
+api.route('/sms-gateways', smsGatewayRoutes);
 api.route('/map', mapRoutes);
 api.route('/super-admin', superAdminRoutes);
 // Phase 6: Advanced Features

@@ -139,6 +139,7 @@ model Tenant {
   vpnPeers   VPNPeer[]
   pendingHotspotPayments PendingHotspotPayment[]
   paymentGateways PaymentGateway[]
+  smsGateways    SmsGateway[]
 
   @@index([status])
   @@index([isActivated])
@@ -540,6 +541,28 @@ model PaymentGateway {
   
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  @@index([tenantId])
+}
+
+model SmsGateway {
+  id          String   @id @default(uuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  provider    String
+  name        String?
+  apiKey      String?
+  username    String?
+  senderId    String?
+  config      Json?
+  
+  isDefault   Boolean  @default(false)
+  forHotspot  Boolean  @default(false)
+  forPppoe    Boolean  @default(false)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@index([tenantId])
 }
