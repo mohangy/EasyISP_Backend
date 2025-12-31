@@ -445,24 +445,215 @@ body {
     text-decoration: underline;
 }
 
-/* ============ Responsive ============ */
+/* ============ Responsive - Mobile First ============ */
+
+/* Base mobile styles (already applied above) */
+
+/* Small phones */
 @media (max-width: 380px) {
     .container {
-        padding: 16px;
+        padding: 12px;
+    }
+
+    .header {
+        padding: 16px 0 20px;
+    }
+
+    .company-name {
+        font-size: 20px;
+    }
+
+    .tabs {
+        padding: 4px;
+        margin-bottom: 16px;
+    }
+
+    .tab {
+        padding: 10px 12px;
+        font-size: 13px;
+    }
+
+    .section-title {
+        font-size: 14px;
+        margin-bottom: 12px;
     }
 
     .package-card {
-        flex-direction: column;
-        align-items: flex-start;
+        padding: 14px;
+    }
+
+    .package-name {
+        font-size: 15px;
+    }
+
+    .btn-buy {
+        padding: 12px 18px;
+        font-size: 13px;
+    }
+
+    .modal-content {
+        padding: 20px 16px;
+    }
+
+    .modal-title {
+        font-size: 18px;
+    }
+}
+
+/* Touch-friendly enhancements for all mobile */
+@media (max-width: 768px) {
+
+    /* Larger touch targets */
+    .package-card {
+        padding: 18px;
+        min-height: 60px;
         gap: 12px;
     }
 
     .btn-buy {
-        width: 100%;
+        padding: 14px 24px;
+        font-size: 15px;
+        min-width: 80px;
+    }
+
+    .tab {
+        padding: 14px 16px;
+        font-size: 15px;
+    }
+
+    /* Better input sizing for mobile */
+    .phone-input {
+        font-size: 20px;
+        padding: 16px 14px;
+    }
+
+    .country-code {
+        padding: 16px 14px;
+        font-size: 16px;
+    }
+
+    .voucher-input {
+        font-size: 20px;
+        padding: 16px;
+    }
+
+    /* Larger buttons */
+    .btn-large {
+        padding: 18px 24px;
+        font-size: 17px;
+    }
+
+    .btn-text {
+        padding: 12px 16px;
+        font-size: 15px;
+    }
+
+    /* Modal adjustments */
+    .modal-overlay {
+        padding: 16px;
+        align-items: flex-end;
+    }
+
+    .modal-content {
+        max-height: 85vh;
+        border-radius: 20px 20px 0 0;
+        padding-bottom: 32px;
+        animation: modalSlideUp 0.3s ease;
+    }
+
+    @keyframes modalSlideUp {
+        from {
+            opacity: 0;
+            transform: translateY(100%);
+        }
+
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .modal-close {
+        width: 36px;
+        height: 36px;
+        font-size: 28px;
+    }
+
+    .modal-title {
+        font-size: 22px;
+        margin-top: 8px;
+    }
+
+    .modal-package-name {
+        font-size: 15px;
+        padding: 10px 14px;
+    }
+
+    /* SMS textarea */
+    .sms-textarea {
+        font-size: 16px;
+        min-height: 100px;
+    }
+
+    /* Success section adjustments */
+    .success-icon {
+        width: 70px;
+        height: 70px;
+        font-size: 40px;
+    }
+
+    .credentials-box {
+        padding: 16px;
+    }
+
+    .credentials-box span {
+        font-size: 16px;
+    }
+
+    /* Payment status */
+    .spinner {
+        width: 50px;
+        height: 50px;
+    }
+
+    .countdown {
+        font-size: 22px;
+    }
+
+    /* Footer positioned well */
+    .footer {
+        padding: 16px 0;
+        font-size: 14px;
+    }
+
+    /* Helper text sizing */
+    .helper-text {
+        font-size: 14px;
     }
 }
 
-/* ============ Simplified Package Cards ============ */
+/* Prevent zoom on input focus (iOS) */
+@media (max-width: 768px) {
+
+    input[type="tel"],
+    input[type="text"],
+    textarea {
+        font-size: 16px !important;
+    }
+}
+
+/* Safe area for notched phones */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+    .container {
+        padding-bottom: calc(20px + env(safe-area-inset-bottom));
+    }
+
+    .modal-content {
+        padding-bottom: calc(32px + env(safe-area-inset-bottom));
+    }
+}
+
+/* Simplified Package Cards */
 .package-name {
     font-size: 16px;
     font-weight: 600;
@@ -473,7 +664,7 @@ body {
 .btn-buy {
     background: var(--primary-color);
     color: white;
-    padding: 10px 20px;
+    padding: 12px 22px;
     border: none;
     border-radius: 8px;
     font-size: 14px;
@@ -481,11 +672,15 @@ body {
     cursor: pointer;
     transition: all 0.2s ease;
     white-space: nowrap;
+    -webkit-tap-highlight-color: transparent;
 }
 
 .btn-buy:hover {
     background: var(--primary-dark);
-    transform: scale(1.02);
+}
+
+.btn-buy:active {
+    transform: scale(0.98);
 }
 
 /* ============ Modal ============ */
@@ -518,6 +713,7 @@ body {
     overflow-y: auto;
     position: relative;
     animation: modalSlideIn 0.3s ease;
+    -webkit-overflow-scrolling: touch;
 }
 
 @keyframes modalSlideIn {
@@ -549,9 +745,11 @@ body {
     align-items: center;
     justify-content: center;
     transition: all 0.2s ease;
+    -webkit-tap-highlight-color: transparent;
 }
 
-.modal-close:hover {
+.modal-close:hover,
+.modal-close:active {
     background: var(--border-color);
     color: var(--text-primary);
 }
