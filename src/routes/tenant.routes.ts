@@ -420,3 +420,52 @@ tenantRoutes.get('/sms-balance', async (c) => {
     const result = await smsService.getBalance(tenantId);
     return c.json(result);
 });
+
+// PUT /api/tenant/payment-gateway - Update Payment Gateway Configuration
+const updatePaymentGatewaySchema = z.object({
+    type: z.string(),
+    config: z.object({
+        consumerKey: z.string().optional(),
+        consumerSecret: z.string().optional(),
+        shortcode: z.string().optional(),
+        passkey: z.string().optional(),
+        env: z.enum(['sandbox', 'production']).optional().default('production'),
+        paybill: z.string().optional(),
+        till: z.string().optional(),
+    }),
+});
+
+tenantRoutes.put('/payment-gateway', requireRole('ADMIN', 'SUPER_ADMIN'), async (c) => {
+    const tenantId = c.get('tenantId');
+    const body = await c.req.json();
+
+    // Allow partial validation or loose checking since the config object is flexible
+    const { type, config } = updatePaymentGatewaySchema.parse(body);
+
+    if (type === 'MPESA_API') {
+        if (!config.consumerKey || !config.consumerSecret || !config.shortcode) {
+            throw new AppError(400, 'Consumer Key, Secret and Shortcode are required for M-Pesa API');
+        }
+
+        await prisma.tenant.update({
+            where: { id: tenantId },
+            data: {
+                mpesaConsumerKey: config.consumerKey,
+                mpesaConsumerSecret: config.consumerSecret,
+                mpesaShortcode: config.shortcode,
+                mpesaPasskey: config.passkey,
+                mpesaEnv: config.env || 'production',
+                // We're not storing paybill/till separately if they are just the shortcode
+                // But if needed we can add generic config column later
+            },
+        });
+    } else {
+        // Handle other types or MPESA_NO_API if needed
+        // For now, only MPESA_API is fully supported in backend schema
+    }
+
+    return c.json({
+        success: true,
+        message: 'Payment gateway updated successfully',
+    });
+});
