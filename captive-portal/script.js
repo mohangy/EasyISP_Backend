@@ -10,17 +10,20 @@
  */
 
 // ============ Configuration ============
-// This should be set dynamically by your router or backend
+// Auto-detect API URL from current page origin, or use query param override
+const urlParams = new URLSearchParams(window.location.search);
+const detectedApiUrl = window.location.origin + '/api';
+
 const CONFIG = {
-    // API base URL - change this to your backend URL
-    apiBaseUrl: 'https://your-api-domain.com/api',
+    // API base URL - auto-detected from origin, or override via ?apiUrl= query param
+    apiBaseUrl: urlParams.get('apiUrl') || detectedApiUrl,
 
     // Tenant ID - can be passed via query param or detected from NAS
-    tenantId: '',
+    tenantId: urlParams.get('tenantId') || '',
 
     // Portal parameters from MikroTik (will be extracted from URL or page)
-    macAddress: '',
-    nasIp: '',
+    macAddress: urlParams.get('mac') || '',
+    nasIp: urlParams.get('nasIp') || '',
 
     // Polling interval for payment status (ms)
     pollInterval: 3000,
@@ -99,11 +102,12 @@ const elements = {
 document.addEventListener('DOMContentLoaded', init);
 
 async function init() {
-    // Extract parameters from URL
-    const urlParams = new URLSearchParams(window.location.search);
-    CONFIG.tenantId = urlParams.get('tenantId') || CONFIG.tenantId;
-    CONFIG.macAddress = urlParams.get('mac') || getMikroTikVar('mac-esc');
-    CONFIG.nasIp = urlParams.get('nasIp') || getMikroTikVar('nas-ip');
+    // Log config for debugging
+    console.log('Captive Portal Config:', CONFIG);
+
+    // Try to get MikroTik variables if not set
+    if (!CONFIG.macAddress) CONFIG.macAddress = getMikroTikVar('mac-esc');
+    if (!CONFIG.nasIp) CONFIG.nasIp = getMikroTikVar('nas-ip');
 
     // If no tenantId, try to get from NAS IP
     if (!CONFIG.tenantId && CONFIG.nasIp) {
@@ -120,7 +124,7 @@ async function init() {
             loadPackages(),
         ]);
     } else {
-        showError('Configuration error: Tenant ID not found');
+        showError('Configuration error: Tenant ID not found. Add ?tenantId=YOUR_TENANT_ID to the URL.');
     }
 }
 

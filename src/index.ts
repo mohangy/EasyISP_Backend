@@ -36,6 +36,10 @@ const app = new Hono();
 
 // Global middleware
 app.use('/uploads/*', serveStatic({ root: './public' }));
+
+// Serve captive portal files for testing/preview (access via /portal-preview/login.html)
+app.use('/portal-preview/*', serveStatic({ root: './captive-portal', rewriteRequestPath: (path) => path.replace('/portal-preview', '') }));
+
 app.use('*', secureHeaders());
 app.use('*', requestLogger()); // Comprehensive request logging
 app.use('*', cors({
