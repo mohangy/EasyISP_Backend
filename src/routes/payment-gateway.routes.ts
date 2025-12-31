@@ -13,8 +13,11 @@ pgRoutes.use('*', authMiddleware);
 // Schema
 const gatewaySchema = z.object({
     type: z.string().default('MPESA_API'),
+    subType: z.enum(['PAYBILL', 'BUYGOODS', 'BANK']).default('PAYBILL'),
     name: z.string().optional(),
     shortcode: z.string().min(3),
+    storeNumber: z.string().optional(),
+    accountNumber: z.string().optional(),
     consumerKey: z.string().optional(),
     consumerSecret: z.string().optional(),
     passkey: z.string().optional(),

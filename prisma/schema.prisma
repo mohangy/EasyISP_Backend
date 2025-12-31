@@ -529,8 +529,11 @@ model PaymentGateway {
   tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   
   type            String   // "MPESA_API", "MPESA_NO_API"
+  subType         String   @default("PAYBILL") // "PAYBILL", "BUYGOODS", "BANK"
   name            String?  // e.g. "Main Paybill"
   shortcode       String
+  storeNumber     String?  // For Buy Goods (Head Office)
+  accountNumber   String?  // For Bank (Target Account)
   consumerKey     String?
   consumerSecret  String?
   passkey         String?

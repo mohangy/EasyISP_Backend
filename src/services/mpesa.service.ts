@@ -13,9 +13,12 @@ import { logger } from '../lib/logger.js';
 import { config } from '../lib/config.js';
 
 interface MpesaConfig {
+    subType: 'PAYBILL' | 'BUYGOODS' | 'BANK';
     consumerKey: string;
     consumerSecret: string;
     shortcode: string;
+    storeNumber?: string;
+    accountNumber?: string;
     passkey: string;
     callbackUrl: string;
     env: 'sandbox' | 'production';
@@ -73,9 +76,12 @@ export async function getTenantMpesaConfig(tenantId: string, purpose?: 'HOTSPOT'
     }
 
     return {
+        subType: (gateway.subType as 'PAYBILL' | 'BUYGOODS' | 'BANK') || 'PAYBILL',
         consumerKey: gateway.consumerKey,
         consumerSecret: gateway.consumerSecret,
         shortcode: gateway.shortcode,
+        storeNumber: gateway.storeNumber || undefined,
+        accountNumber: gateway.accountNumber || undefined,
         passkey: gateway.passkey || '',
         callbackUrl: (tenant as any)?.mpesaCallbackUrl || config.mpesa.callbackUrl || '',
         env: (gateway.env as 'sandbox' | 'production') || 'production',
@@ -108,7 +114,9 @@ export async function getAccessToken(tenantId: string, purpose?: 'HOTSPOT' | 'PP
     }
 
     const baseUrl = getBaseUrl(config.env);
-    const auth = Buffer.from(`${config.consumerKey}:${config.consumerSecret}`).toString('base64');
+    const consumerKey = config.consumerKey.trim();
+    const consumerSecret = config.consumerSecret.trim();
+    const auth = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
 
     const response = await fetch(`${baseUrl}/oauth/v1/generate?grant_type=client_credentials`, {
         method: 'GET',
@@ -120,7 +128,7 @@ export async function getAccessToken(tenantId: string, purpose?: 'HOTSPOT' | 'PP
     if (!response.ok) {
         const error = await response.text();
         logger.error({ error, tenantId }, 'Failed to get M-Pesa access token');
-        throw new Error('Failed to get M-Pesa access token');
+        throw new Error(`Failed to get M-Pesa access token: ${error}`);
     }
 
     const data = await response.json() as { access_token: string; expires_in: string };
@@ -225,20 +233,39 @@ export async function initiateSTKPush(
     const token = await getAccessToken(tenantId);
     const baseUrl = getBaseUrl(config.env);
     const timestamp = generateTimestamp();
-    const password = generatePassword(config.shortcode, config.passkey, timestamp);
+    // Determine parameters based on subType
+    let businessShortCode = config.shortcode;
+    let partyB = config.shortcode;
+    let transactionType = 'CustomerPayBillOnline';
+    let finalAccountRef = accountReference;
+
+    if (config.subType === 'BUYGOODS') {
+        // Buy Goods: BusinessShortCode is Store Number, PartyB is Till Number
+        businessShortCode = config.storeNumber || config.shortcode; // Fallback if store number missing
+        partyB = config.shortcode;
+        transactionType = 'CustomerBuyGoodsOnline';
+    } else if (config.subType === 'BANK') {
+        // Bank: BusinessShortCode is Bank Paybill, AccountRef is Target Account
+        businessShortCode = config.shortcode;
+        partyB = config.shortcode;
+        finalAccountRef = config.accountNumber || accountReference;
+        transactionType = 'CustomerPayBillOnline';
+    }
+
+    const password = generatePassword(businessShortCode, config.passkey, timestamp);
     const formattedPhone = formatPhoneNumber(phone);
 
     const payload = {
-        BusinessShortCode: config.shortcode,
+        BusinessShortCode: businessShortCode,
         Password: password,
         Timestamp: timestamp,
-        TransactionType: 'CustomerPayBillOnline',
+        TransactionType: transactionType,
         Amount: Math.round(amount),
         PartyA: formattedPhone,
-        PartyB: config.shortcode,
+        PartyB: partyB,
         PhoneNumber: formattedPhone,
         CallBackURL: config.callbackUrl,
-        AccountReference: accountReference,
+        AccountReference: finalAccountRef,
         TransactionDesc: transactionDesc,
     };
 
