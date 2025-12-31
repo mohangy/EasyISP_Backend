@@ -10,6 +10,7 @@
 
 import { prisma } from '../lib/prisma.js';
 import { logger } from '../lib/logger.js';
+import { config } from '../lib/config.js';
 
 interface MpesaConfig {
     consumerKey: string;
@@ -76,7 +77,7 @@ export async function getTenantMpesaConfig(tenantId: string, purpose?: 'HOTSPOT'
         consumerSecret: gateway.consumerSecret,
         shortcode: gateway.shortcode,
         passkey: gateway.passkey || '',
-        callbackUrl: tenant?.mpesaCallbackUrl || '',
+        callbackUrl: (tenant as any)?.mpesaCallbackUrl || config.mpesa.callbackUrl || '',
         env: (gateway.env as 'sandbox' | 'production') || 'production',
     };
 }
