@@ -54,6 +54,61 @@ portalRoutes.get('/packages', async (c) => {
     });
 });
 
+// GET /api/portal/check-session - Check if MAC has active session
+portalRoutes.get('/check-session', async (c) => {
+    const macAddress = c.req.query('mac');
+    const tenantId = c.req.query('tenantId');
+
+    if (!macAddress || !tenantId) {
+        return c.json({ hasActiveSession: false });
+    }
+
+    // Normalize MAC address (uppercase, colon-separated)
+    const normalizedMac = macAddress.toUpperCase().replace(/[:-]/g, ':');
+
+    // Find customer with this MAC address who has a valid session
+    const customer = await prisma.customer.findFirst({
+        where: {
+            tenantId,
+            lastMac: normalizedMac,
+            connectionType: 'HOTSPOT',
+            status: 'ACTIVE',
+            deletedAt: null,
+            expiresAt: { gt: new Date() }, // Not expired
+        },
+        include: {
+            package: { select: { name: true } },
+        },
+    });
+
+    if (!customer) {
+        return c.json({ hasActiveSession: false });
+    }
+
+    // Calculate remaining time
+    const now = new Date();
+    const remaining = customer.expiresAt.getTime() - now.getTime();
+    const remainingMinutes = Math.floor(remaining / 60000);
+
+    logger.info({
+        macAddress: normalizedMac,
+        username: customer.username,
+        remainingMinutes
+    }, 'Found active session for MAC');
+
+    return c.json({
+        hasActiveSession: true,
+        customer: {
+            username: customer.username,
+            password: customer.password, // For auto-login
+            name: customer.name,
+            packageName: customer.package?.name,
+            expiresAt: customer.expiresAt,
+            remainingMinutes,
+        }
+    });
+});
+
 // POST /api/portal/login - Hotspot login
 portalRoutes.post('/login', async (c) => {
     const body = await c.req.json();

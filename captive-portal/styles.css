@@ -772,3 +772,92 @@ body {
     background: rgba(14, 165, 233, 0.1);
     border-radius: 8px;
 }
+
+/* ============ Session Popup ============ */
+.session-popup-content {
+    text-align: center;
+    padding-top: 32px;
+}
+
+.session-icon {
+    width: 80px;
+    height: 80px;
+    background: linear-gradient(135deg, var(--success-color) 0%, #16a34a 100%);
+    color: white;
+    font-size: 42px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 20px;
+    box-shadow: 0 8px 24px rgba(34, 197, 94, 0.3);
+}
+
+.session-title {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+}
+
+.session-message {
+    font-size: 15px;
+    color: var(--text-secondary);
+    margin-bottom: 20px;
+}
+
+.session-details {
+    background: var(--bg-tertiary);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 20px;
+    text-align: left;
+}
+
+.session-details p {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    font-size: 15px;
+    color: var(--text-primary);
+}
+
+.session-details p:last-child {
+    margin-bottom: 0;
+}
+
+.session-details strong {
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.session-details span {
+    color: var(--primary-color);
+    font-weight: 600;
+}
+
+#use-session-btn {
+    margin-bottom: 12px;
+    background: linear-gradient(135deg, var(--success-color) 0%, #16a34a 100%);
+}
+
+#use-session-btn:hover {
+    transform: scale(1.02);
+}
+
+@media (max-width: 768px) {
+    .session-icon {
+        width: 70px;
+        height: 70px;
+        font-size: 36px;
+    }
+
+    .session-title {
+        font-size: 22px;
+    }
+
+    .session-details {
+        padding: 14px;
+    }
+}

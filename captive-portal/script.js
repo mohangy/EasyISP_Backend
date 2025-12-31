@@ -40,6 +40,7 @@ let state = {
     pollTimer: null,
     countdownTimer: null,
     countdownSeconds: 300,
+    activeSession: null, // Stores active session data if found
 };
 
 // ============ DOM Elements ============
@@ -100,6 +101,13 @@ const elements = {
     phoneModal: document.getElementById('phone-modal'),
     modalClose: document.getElementById('modal-close'),
     modalPackageName: document.getElementById('modal-package-name'),
+
+    // Session Popup
+    sessionPopup: document.getElementById('session-popup'),
+    popupPackageName: document.getElementById('popup-package-name'),
+    popupRemainingTime: document.getElementById('popup-remaining-time'),
+    useSessionBtn: document.getElementById('use-session-btn'),
+    dismissPopupBtn: document.getElementById('dismiss-popup-btn'),
 };
 
 // ============ Initialization ============
@@ -127,6 +135,11 @@ async function init() {
             loadTenantInfo(),
             loadPackages(),
         ]);
+
+        // Check for active session after loading packages
+        if (CONFIG.macAddress) {
+            await checkActiveSession();
+        }
     } else {
         showError('Configuration error: Tenant ID not found. Add ?tenantId=YOUR_TENANT_ID to the URL.');
     }
@@ -182,6 +195,10 @@ function setupEventListeners() {
 
     // Connect button
     elements.connectBtn.addEventListener('click', submitLogin);
+
+    // Session popup
+    elements.useSessionBtn?.addEventListener('click', useExistingSession);
+    elements.dismissPopupBtn?.addEventListener('click', dismissSessionPopup);
 }
 
 // ============ Tab Management ============
@@ -572,4 +589,59 @@ function showError(message) {
 
 function hideError() {
     elements.errorMessage.classList.add('hidden');
+}
+
+// ============ Active Session Detection ============
+async function checkActiveSession() {
+    try {
+        const response = await fetch(
+            `${CONFIG.apiBaseUrl}/portal/check-session?mac=${encodeURIComponent(CONFIG.macAddress)}&tenantId=${CONFIG.tenantId}`
+        );
+
+        const data = await response.json();
+
+        if (data.hasActiveSession && data.customer) {
+            state.activeSession = data.customer;
+            showSessionPopup(data.customer);
+        }
+    } catch (error) {
+        console.error('Failed to check active session:', error);
+    }
+}
+
+function showSessionPopup(customer) {
+    elements.popupPackageName.textContent = customer.packageName || 'Hotspot';
+    elements.popupRemainingTime.textContent = formatRemainingTime(customer.remainingMinutes);
+    elements.sessionPopup.classList.add('active');
+}
+
+function formatRemainingTime(minutes) {
+    if (minutes >= 60 * 24) {
+        const days = Math.floor(minutes / (60 * 24));
+        return `${days} day${days > 1 ? 's' : ''}`;
+    } else if (minutes >= 60) {
+        const hours = Math.floor(minutes / 60);
+        const mins = minutes % 60;
+        return `${hours}h ${mins}m`;
+    } else {
+        return `${minutes} minute${minutes !== 1 ? 's' : ''}`;
+    }
+}
+
+function useExistingSession() {
+    if (!state.activeSession) return;
+
+    // Set credentials and submit login form
+    state.credentials = {
+        username: state.activeSession.username,
+        password: state.activeSession.password,
+    };
+
+    elements.sessionPopup.classList.remove('active');
+    submitLogin();
+}
+
+function dismissSessionPopup() {
+    elements.sessionPopup.classList.remove('active');
+    state.activeSession = null;
 }

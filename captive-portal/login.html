@@ -109,6 +109,21 @@ Example: SJK4H7L2PQ Confirmed. Ksh500.00 sent to..."></textarea>
         </footer>
     </div>
 
+    <!-- Active Session Popup -->
+    <div id="session-popup" class="modal-overlay">
+        <div class="modal-content session-popup-content">
+            <div class="session-icon">✓</div>
+            <h2 class="session-title">Welcome Back!</h2>
+            <p class="session-message">You have an active session</p>
+            <div class="session-details">
+                <p><strong>Package:</strong> <span id="popup-package-name">-</span></p>
+                <p><strong>Time Remaining:</strong> <span id="popup-remaining-time">-</span></p>
+            </div>
+            <button id="use-session-btn" class="btn btn-primary btn-large">Click Here to Connect</button>
+            <button id="dismiss-popup-btn" class="btn btn-text">Buy New Package Instead</button>
+        </div>
+    </div>
+
     <!-- Hidden form for MikroTik login -->
     <form id="mikrotik-form" action="$(link-login-only)" method="post" class="hidden">
         <input type="hidden" name="username" id="form-username">
