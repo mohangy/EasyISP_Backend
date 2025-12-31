@@ -57,8 +57,7 @@ const elements = {
     packagesSection: document.getElementById('packages-section'),
     packagesList: document.getElementById('packages-list'),
 
-    // Phone input
-    phoneSection: document.getElementById('phone-section'),
+    // Phone input (now inside modal)
     phoneInput: document.getElementById('phone-input'),
     selectedPrice: document.getElementById('selected-price'),
     payBtn: document.getElementById('pay-btn'),
@@ -317,7 +316,8 @@ async function initiatePayment() {
 
     const phone = '254' + elements.phoneInput.value;
 
-    showSection('payment');
+    // Show payment status inside modal
+    showModalSection('payment');
     elements.paymentMessage.textContent = 'Initiating payment...';
 
     try {
@@ -348,7 +348,7 @@ async function initiatePayment() {
 
     } catch (error) {
         showError(error.message);
-        showSection('phone');
+        showModalSection('phone');
     }
 }
 
@@ -512,7 +512,7 @@ function showSuccess(username, password) {
     // Store credentials for form submission
     state.credentials = { username, password };
 
-    showSection('success');
+    showModalSection('success');
 }
 
 function submitLogin() {
@@ -529,15 +529,39 @@ function submitLogin() {
 // ============ UI Helpers ============
 function showSection(section) {
     hideError();
-
     elements.packagesSection.classList.toggle('hidden', section !== 'packages');
-    elements.phoneSection.classList.toggle('hidden', section !== 'phone');
-    elements.paymentSection.classList.toggle('hidden', section !== 'payment');
-    elements.successSection.classList.toggle('hidden', section !== 'success');
+}
 
-    // Hide SMS fallback in payment and success
-    if (section === 'payment' || section === 'success') {
-        elements.smsFallback.classList.add('hidden');
+// Show section inside modal
+function showModalSection(section) {
+    hideError();
+    // Hide phone input elements when showing other sections
+    const phoneElements = elements.phoneModal.querySelector('.phone-input-group');
+    const payBtn = elements.payBtn;
+    const backBtn = elements.backBtn;
+    const helperText = elements.phoneModal.querySelector('.helper-text');
+
+    if (section === 'phone') {
+        phoneElements?.classList.remove('hidden');
+        payBtn?.classList.remove('hidden');
+        backBtn?.classList.remove('hidden');
+        helperText?.classList.remove('hidden');
+        elements.paymentSection.classList.add('hidden');
+        elements.successSection.classList.add('hidden');
+    } else if (section === 'payment') {
+        phoneElements?.classList.add('hidden');
+        payBtn?.classList.add('hidden');
+        backBtn?.classList.add('hidden');
+        helperText?.classList.add('hidden');
+        elements.paymentSection.classList.remove('hidden');
+        elements.successSection.classList.add('hidden');
+    } else if (section === 'success') {
+        phoneElements?.classList.add('hidden');
+        payBtn?.classList.add('hidden');
+        backBtn?.classList.add('hidden');
+        helperText?.classList.add('hidden');
+        elements.paymentSection.classList.add('hidden');
+        elements.successSection.classList.remove('hidden');
     }
 }
 

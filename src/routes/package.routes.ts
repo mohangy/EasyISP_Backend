@@ -265,8 +265,10 @@ packageRoutes.delete('/:id', requirePermission('packages:delete'), async (c) => 
         throw new AppError(400, 'Cannot delete package with active customers');
     }
 
-    // Delete router associations first
+    // Delete related records first
     await prisma.packageRouter.deleteMany({ where: { packageId } });
+    await prisma.pendingHotspotPayment.deleteMany({ where: { packageId } });
+
     // Delete package
     await prisma.package.delete({ where: { id: packageId } });
 
