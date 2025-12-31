@@ -36,7 +36,7 @@ smsGatewayRoutes.get('/', requireRole('ADMIN', 'SUPER_ADMIN'), async (c) => {
         if (tenant && tenant.smsProvider) {
             const newGw = await prisma.smsGateway.create({
                 data: {
-                    tenantId,
+                    tenant: { connect: { id: tenantId } },
                     provider: tenant.smsProvider,
                     name: 'Migrated SMS Gateway',
                     apiKey: tenant.smsApiKey,
@@ -70,8 +70,9 @@ smsGatewayRoutes.post('/', requireRole('ADMIN', 'SUPER_ADMIN'), async (c) => {
 
     const gw = await prisma.smsGateway.create({
         data: {
-            tenantId,
+            tenant: { connect: { id: tenantId } },
             ...data,
+            provider: data.provider,
             name: data.name || `${data.provider} Gateway`
         }
     });

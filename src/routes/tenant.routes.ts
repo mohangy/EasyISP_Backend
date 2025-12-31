@@ -4,7 +4,7 @@ import { prisma } from '../lib/prisma.js';
 import { authMiddleware, requireRole, requirePermission } from '../middleware/auth.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { smsService } from '../services/sms.service.js';
-import { testConnection } from '../services/mpesa.service.js';
+// import { testConnection } from '../services/mpesa.service.js';
 import bcrypt from 'bcryptjs';
 const { hash } = bcrypt;
 
@@ -464,18 +464,21 @@ tenantRoutes.get('/payment-gateway', requireRole('ADMIN', 'SUPER_ADMIN'), async 
     });
 });
 
+/*
 // POST /api/tenant/payment-gateway/test - Test Payment Gateway Configuration
 tenantRoutes.post('/payment-gateway/test', requireRole('ADMIN', 'SUPER_ADMIN'), async (c) => {
     const tenantId = c.get('tenantId');
     // We test the *stored* configuration.
-    const result = await testConnection(tenantId);
+    // const result = await testConnection(tenantId);
 
-    if (result.success) {
-        return c.json(result);
-    } else {
-        return c.json(result, 400);
-    }
+    // if (result.success) {
+    //     return c.json(result);
+    // } else {
+    //     return c.json(result, 400);
+    // }
+    return c.json({ success: false, message: 'Not implemented' }, 501);
 });
+*/
 
 tenantRoutes.put('/payment-gateway', requireRole('ADMIN', 'SUPER_ADMIN'), async (c) => {
     const tenantId = c.get('tenantId');

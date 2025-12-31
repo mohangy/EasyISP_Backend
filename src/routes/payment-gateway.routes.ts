@@ -38,7 +38,7 @@ pgRoutes.get('/', requireRole('ADMIN', 'SUPER_ADMIN'), async (c) => {
         if (tenant && tenant.mpesaConsumerKey && tenant.mpesaShortcode) {
             const newGw = await prisma.paymentGateway.create({
                 data: {
-                    tenantId,
+                    tenant: { connect: { id: tenantId } },
                     type: 'MPESA_API',
                     name: 'Migrated Gateway',
                     shortcode: tenant.mpesaShortcode,
@@ -71,7 +71,9 @@ pgRoutes.post('/', requireRole('ADMIN', 'SUPER_ADMIN'), async (c) => {
     const gw = await prisma.paymentGateway.create({
         data: {
             ...data,
-            tenantId,
+            type: data.type,
+            shortcode: data.shortcode,
+            tenant: { connect: { id: tenantId } },
             isDefault
         }
     });
