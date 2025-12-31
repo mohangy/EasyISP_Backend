@@ -1,7 +1,16 @@
 import { Hono } from 'hono';
+import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../lib/logger.js';
+import {
+    initiateSTKPush,
+    querySTKStatus,
+    parseMpesaSms,
+    createHotspotCustomerFromPayment,
+    formatPhoneNumber,
+    getTenantMpesaConfig,
+} from '../services/mpesa.service.js';
 
 export const portalRoutes = new Hono();
 
@@ -293,6 +302,323 @@ portalRoutes.get('/tenant', async (c) => {
             email: tenant.email,
         },
     });
+});
+
+// ============ M-PESA HOTSPOT ENDPOINTS ============
+
+// Validation schemas
+const mpesaInitiateSchema = z.object({
+    tenantId: z.string().uuid(),
+    phone: z.string().min(9),
+    packageId: z.string().uuid(),
+    macAddress: z.string().optional(),
+    nasIp: z.string().optional(),
+});
+
+const mpesaVerifySmsSchema = z.object({
+    tenantId: z.string().uuid(),
+    smsText: z.string().min(10),
+    packageId: z.string().uuid(),
+    macAddress: z.string().optional(),
+    nasIp: z.string().optional(),
+});
+
+// GET /api/portal/mpesa/check - Check if tenant has M-Pesa configured
+portalRoutes.get('/mpesa/check', async (c) => {
+    const tenantId = c.req.query('tenantId');
+
+    if (!tenantId) {
+        throw new AppError(400, 'Tenant ID required');
+    }
+
+    const config = await getTenantMpesaConfig(tenantId);
+
+    return c.json({
+        configured: config !== null,
+    });
+});
+
+// POST /api/portal/mpesa/initiate - Initiate STK push for package purchase
+portalRoutes.post('/mpesa/initiate', async (c) => {
+    const body = await c.req.json();
+    const data = mpesaInitiateSchema.parse(body);
+
+    // Get package details
+    const pkg = await prisma.package.findFirst({
+        where: { id: data.packageId, tenantId: data.tenantId, isActive: true },
+    });
+
+    if (!pkg) {
+        throw new AppError(404, 'Package not found');
+    }
+
+    try {
+        // Initiate STK push
+        const response = await initiateSTKPush(
+            data.tenantId,
+            data.phone,
+            pkg.price,
+            `HS-${pkg.name.substring(0, 10)}`,
+            `Hotspot: ${pkg.name}`
+        );
+
+        // Create pending payment record
+        const pendingPayment = await prisma.pendingHotspotPayment.create({
+            data: {
+                checkoutRequestId: response.CheckoutRequestID,
+                merchantRequestId: response.MerchantRequestID,
+                phone: formatPhoneNumber(data.phone),
+                amount: pkg.price,
+                packageId: data.packageId,
+                macAddress: data.macAddress,
+                nasIp: data.nasIp,
+                tenantId: data.tenantId,
+                expiresAt: new Date(Date.now() + 5 * 60 * 1000), // 5 minutes
+            },
+        });
+
+        logger.info({
+            checkoutRequestId: response.CheckoutRequestID,
+            packageName: pkg.name,
+            phone: formatPhoneNumber(data.phone)
+        }, 'M-Pesa STK Push initiated for hotspot');
+
+        return c.json({
+            success: true,
+            checkoutRequestId: response.CheckoutRequestID,
+            message: response.CustomerMessage,
+        });
+    } catch (error) {
+        logger.error({ error, tenantId: data.tenantId }, 'Failed to initiate STK push');
+        throw new AppError(500, error instanceof Error ? error.message : 'Failed to initiate payment');
+    }
+});
+
+// GET /api/portal/mpesa/status - Check payment status by CheckoutRequestID
+portalRoutes.get('/mpesa/status', async (c) => {
+    const checkoutRequestId = c.req.query('checkoutRequestId');
+    const tenantId = c.req.query('tenantId');
+
+    if (!checkoutRequestId || !tenantId) {
+        throw new AppError(400, 'checkoutRequestId and tenantId required');
+    }
+
+    // First check our database
+    const pendingPayment = await prisma.pendingHotspotPayment.findUnique({
+        where: { checkoutRequestId },
+        include: { package: true },
+    });
+
+    if (!pendingPayment) {
+        throw new AppError(404, 'Payment not found');
+    }
+
+    // If already completed, return success
+    if (pendingPayment.status === 'COMPLETED' && pendingPayment.transactionCode) {
+        return c.json({
+            status: 'completed',
+            username: pendingPayment.transactionCode,
+            password: pendingPayment.transactionCode,
+            package: pendingPayment.package.name,
+        });
+    }
+
+    // If expired or failed
+    if (pendingPayment.status === 'FAILED' || pendingPayment.status === 'EXPIRED') {
+        return c.json({
+            status: pendingPayment.status.toLowerCase(),
+        });
+    }
+
+    // Check if expired by time
+    if (new Date() > pendingPayment.expiresAt) {
+        await prisma.pendingHotspotPayment.update({
+            where: { id: pendingPayment.id },
+            data: { status: 'EXPIRED' },
+        });
+        return c.json({ status: 'expired' });
+    }
+
+    // Query M-Pesa for status (optional - can be expensive)
+    try {
+        const mpesaStatus = await querySTKStatus(tenantId, checkoutRequestId);
+
+        if (mpesaStatus.ResultCode === '0') {
+            // Payment successful but callback not received yet
+            return c.json({ status: 'pending', message: 'Payment confirmed, processing...' });
+        } else if (mpesaStatus.ResultCode) {
+            // Payment failed
+            await prisma.pendingHotspotPayment.update({
+                where: { id: pendingPayment.id },
+                data: { status: 'FAILED' },
+            });
+            return c.json({ status: 'failed', message: mpesaStatus.ResultDesc });
+        }
+    } catch {
+        // M-Pesa query failed, continue polling
+    }
+
+    return c.json({ status: 'pending' });
+});
+
+// POST /api/portal/mpesa/verify-sms - Verify payment from pasted SMS message
+portalRoutes.post('/mpesa/verify-sms', async (c) => {
+    const body = await c.req.json();
+    const data = mpesaVerifySmsSchema.parse(body);
+
+    // Parse the SMS to extract transaction code
+    const parsed = parseMpesaSms(data.smsText);
+
+    if (!parsed) {
+        throw new AppError(400, 'Could not extract M-Pesa transaction code from message');
+    }
+
+    // Check if this transaction code is already used
+    const existingPayment = await prisma.payment.findFirst({
+        where: { transactionId: parsed.code },
+    });
+
+    if (existingPayment) {
+        throw new AppError(400, 'This transaction has already been used');
+    }
+
+    // Check if customer already exists with this code
+    const existingCustomer = await prisma.customer.findFirst({
+        where: { username: parsed.code, tenantId: data.tenantId },
+    });
+
+    if (existingCustomer) {
+        // Customer already created - return credentials
+        return c.json({
+            success: true,
+            username: parsed.code,
+            password: parsed.code,
+            message: 'Account already exists',
+        });
+    }
+
+    // Get package details
+    const pkg = await prisma.package.findFirst({
+        where: { id: data.packageId, tenantId: data.tenantId, isActive: true },
+    });
+
+    if (!pkg) {
+        throw new AppError(404, 'Package not found');
+    }
+
+    // Verify amount matches (if extracted from SMS)
+    if (parsed.amount && parsed.amount < pkg.price) {
+        throw new AppError(400, `Payment amount (${parsed.amount}) is less than package price (${pkg.price})`);
+    }
+
+    try {
+        // Create the hotspot customer
+        const result = await createHotspotCustomerFromPayment(
+            data.tenantId,
+            parsed.code,
+            '', // Phone not available from SMS parse
+            data.packageId,
+            parsed.amount || pkg.price
+        );
+
+        logger.info({
+            transactionCode: parsed.code,
+            packageName: pkg.name
+        }, 'Hotspot customer created from SMS verification');
+
+        return c.json({
+            success: true,
+            username: result.username,
+            password: result.password,
+            expiresAt: result.expiresAt,
+            package: pkg.name,
+        });
+    } catch (error) {
+        logger.error({ error, code: parsed.code }, 'Failed to create customer from SMS');
+        throw new AppError(500, 'Failed to process payment');
+    }
+});
+
+// POST /api/portal/mpesa/callback - M-Pesa webhook callback (called by M-Pesa)
+portalRoutes.post('/mpesa/callback', async (c) => {
+    try {
+        const rawBody = await c.req.json();
+        logger.info({ body: rawBody }, 'M-Pesa hotspot callback received');
+
+        const stkCallback = rawBody?.Body?.stkCallback;
+        if (!stkCallback) {
+            return c.json({ ResultCode: 0, ResultDesc: 'Accepted' });
+        }
+
+        const { CheckoutRequestID, ResultCode, CallbackMetadata } = stkCallback;
+
+        // Find the pending payment
+        const pendingPayment = await prisma.pendingHotspotPayment.findUnique({
+            where: { checkoutRequestId: CheckoutRequestID },
+            include: { package: true },
+        });
+
+        if (!pendingPayment) {
+            logger.warn({ CheckoutRequestID }, 'Pending payment not found for callback');
+            return c.json({ ResultCode: 0, ResultDesc: 'Accepted' });
+        }
+
+        // If payment failed
+        if (ResultCode !== 0) {
+            await prisma.pendingHotspotPayment.update({
+                where: { id: pendingPayment.id },
+                data: { status: 'FAILED' },
+            });
+            logger.info({ CheckoutRequestID, ResultCode }, 'M-Pesa hotspot payment failed');
+            return c.json({ ResultCode: 0, ResultDesc: 'Accepted' });
+        }
+
+        // Extract transaction details from callback
+        const metadata = CallbackMetadata?.Item ?? [];
+        const getMetaValue = (name: string): string | number | undefined => {
+            const item = metadata.find((m: { Name: string }) => m.Name === name);
+            return item?.Value;
+        };
+
+        const mpesaReceiptNumber = String(getMetaValue('MpesaReceiptNumber') ?? '');
+        const amount = Number(getMetaValue('Amount')) || pendingPayment.amount;
+        const phone = String(getMetaValue('PhoneNumber') ?? pendingPayment.phone);
+
+        if (!mpesaReceiptNumber) {
+            logger.error({ CheckoutRequestID }, 'No receipt number in callback');
+            return c.json({ ResultCode: 0, ResultDesc: 'Accepted' });
+        }
+
+        // Create hotspot customer
+        const result = await createHotspotCustomerFromPayment(
+            pendingPayment.tenantId,
+            mpesaReceiptNumber,
+            phone,
+            pendingPayment.packageId,
+            amount
+        );
+
+        // Update pending payment
+        await prisma.pendingHotspotPayment.update({
+            where: { id: pendingPayment.id },
+            data: {
+                status: 'COMPLETED',
+                transactionCode: mpesaReceiptNumber,
+                customerId: result.customerId,
+            },
+        });
+
+        logger.info({
+            CheckoutRequestID,
+            mpesaReceiptNumber,
+            username: result.username
+        }, 'M-Pesa hotspot payment completed successfully');
+
+        return c.json({ ResultCode: 0, ResultDesc: 'Accepted' });
+    } catch (error) {
+        logger.error({ error }, 'M-Pesa callback processing error');
+        return c.json({ ResultCode: 0, ResultDesc: 'Accepted' });
+    }
 });
 
 // Helper functions

@@ -1,0 +1,528 @@
+/**
+ * Captive Portal Script
+ * 
+ * Handles:
+ * - Dynamic package loading from API
+ * - M-Pesa STK push payment flow
+ * - SMS fallback verification
+ * - Voucher redemption
+ * - Auto-login after payment
+ */
+
+// ============ Configuration ============
+// This should be set dynamically by your router or backend
+const CONFIG = {
+    // API base URL - change this to your backend URL
+    apiBaseUrl: 'https://your-api-domain.com/api',
+
+    // Tenant ID - can be passed via query param or detected from NAS
+    tenantId: '',
+
+    // Portal parameters from MikroTik (will be extracted from URL or page)
+    macAddress: '',
+    nasIp: '',
+
+    // Polling interval for payment status (ms)
+    pollInterval: 3000,
+
+    // Payment timeout (ms)
+    paymentTimeout: 5 * 60 * 1000, // 5 minutes
+};
+
+// ============ State ============
+let state = {
+    packages: [],
+    selectedPackage: null,
+    checkoutRequestId: null,
+    pollTimer: null,
+    countdownTimer: null,
+    countdownSeconds: 300,
+};
+
+// ============ DOM Elements ============
+const elements = {
+    // Header
+    logo: document.getElementById('logo'),
+    companyName: document.getElementById('company-name'),
+
+    // Tabs
+    tabs: document.querySelectorAll('.tab'),
+    mpesaTab: document.getElementById('mpesa-tab'),
+    voucherTab: document.getElementById('voucher-tab'),
+
+    // Packages
+    packagesSection: document.getElementById('packages-section'),
+    packagesList: document.getElementById('packages-list'),
+
+    // Phone input
+    phoneSection: document.getElementById('phone-section'),
+    phoneInput: document.getElementById('phone-input'),
+    selectedPrice: document.getElementById('selected-price'),
+    payBtn: document.getElementById('pay-btn'),
+    backBtn: document.getElementById('back-to-packages'),
+
+    // Payment
+    paymentSection: document.getElementById('payment-section'),
+    paymentMessage: document.getElementById('payment-message'),
+    countdownTimer: document.getElementById('countdown-timer'),
+
+    // Success
+    successSection: document.getElementById('success-section'),
+    successUsername: document.getElementById('success-username'),
+    successPassword: document.getElementById('success-password'),
+    connectBtn: document.getElementById('connect-btn'),
+
+    // SMS Fallback
+    smsFallback: document.getElementById('sms-fallback'),
+    showSmsBtn: document.getElementById('show-sms-btn'),
+    smsInputSection: document.getElementById('sms-input-section'),
+    smsText: document.getElementById('sms-text'),
+    verifySmsBtn: document.getElementById('verify-sms-btn'),
+
+    // Voucher
+    voucherInput: document.getElementById('voucher-input'),
+    redeemBtn: document.getElementById('redeem-btn'),
+
+    // Error
+    errorMessage: document.getElementById('error-message'),
+
+    // Footer
+    supportLink: document.getElementById('support-link'),
+
+    // MikroTik form
+    mikrotikForm: document.getElementById('mikrotik-form'),
+    formUsername: document.getElementById('form-username'),
+    formPassword: document.getElementById('form-password'),
+};
+
+// ============ Initialization ============
+document.addEventListener('DOMContentLoaded', init);
+
+async function init() {
+    // Extract parameters from URL
+    const urlParams = new URLSearchParams(window.location.search);
+    CONFIG.tenantId = urlParams.get('tenantId') || CONFIG.tenantId;
+    CONFIG.macAddress = urlParams.get('mac') || getMikroTikVar('mac-esc');
+    CONFIG.nasIp = urlParams.get('nasIp') || getMikroTikVar('nas-ip');
+
+    // If no tenantId, try to get from NAS IP
+    if (!CONFIG.tenantId && CONFIG.nasIp) {
+        await detectTenantFromNas();
+    }
+
+    // Setup event listeners
+    setupEventListeners();
+
+    // Load tenant info and packages
+    if (CONFIG.tenantId) {
+        await Promise.all([
+            loadTenantInfo(),
+            loadPackages(),
+        ]);
+    } else {
+        showError('Configuration error: Tenant ID not found');
+    }
+}
+
+// Try to extract MikroTik variable from page (they inject these)
+function getMikroTikVar(name) {
+    // MikroTik replaces $(variable) with actual values in the HTML
+    const match = document.body.innerHTML.match(new RegExp(`\\$\\(${name}\\)`));
+    return match ? '' : ''; // If $(var) still exists, it wasn't replaced
+}
+
+// Detect tenant from NAS IP
+async function detectTenantFromNas() {
+    try {
+        const response = await fetch(`${CONFIG.apiBaseUrl}/portal/tenant?nasIp=${CONFIG.nasIp}`);
+        if (response.ok) {
+            const data = await response.json();
+            CONFIG.tenantId = data.id;
+        }
+    } catch (error) {
+        console.error('Failed to detect tenant:', error);
+    }
+}
+
+// ============ Event Listeners ============
+function setupEventListeners() {
+    // Tab switching
+    elements.tabs.forEach(tab => {
+        tab.addEventListener('click', () => switchTab(tab.dataset.tab));
+    });
+
+    // Phone input
+    elements.phoneInput.addEventListener('input', validatePhoneInput);
+    elements.payBtn.addEventListener('click', initiatePayment);
+    elements.backBtn.addEventListener('click', () => showSection('packages'));
+
+    // SMS fallback
+    elements.showSmsBtn.addEventListener('click', toggleSmsInput);
+    elements.verifySmsBtn.addEventListener('click', verifySmsPayment);
+
+    // Voucher
+    elements.redeemBtn.addEventListener('click', redeemVoucher);
+    elements.voucherInput.addEventListener('input', () => {
+        elements.voucherInput.value = elements.voucherInput.value.toUpperCase();
+    });
+
+    // Connect button
+    elements.connectBtn.addEventListener('click', submitLogin);
+}
+
+// ============ Tab Management ============
+function switchTab(tabName) {
+    elements.tabs.forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.tab === tabName);
+    });
+
+    elements.mpesaTab.classList.toggle('active', tabName === 'mpesa');
+    elements.voucherTab.classList.toggle('active', tabName === 'voucher');
+
+    hideError();
+}
+
+// ============ API Functions ============
+async function loadTenantInfo() {
+    try {
+        const response = await fetch(`${CONFIG.apiBaseUrl}/portal/tenant?tenantId=${CONFIG.tenantId}`);
+        if (!response.ok) throw new Error('Failed to load tenant info');
+
+        const data = await response.json();
+
+        // Update branding
+        elements.companyName.textContent = data.name;
+
+        if (data.logo) {
+            elements.logo.src = data.logo;
+            elements.logo.classList.remove('hidden');
+        }
+
+        if (data.primaryColor) {
+            document.documentElement.style.setProperty('--primary-color', data.primaryColor);
+        }
+
+        if (data.contact?.phone) {
+            elements.supportLink.href = `tel:${data.contact.phone}`;
+            elements.supportLink.textContent = `Call ${data.contact.phone}`;
+        }
+    } catch (error) {
+        console.error('Failed to load tenant info:', error);
+    }
+}
+
+async function loadPackages() {
+    try {
+        const response = await fetch(`${CONFIG.apiBaseUrl}/portal/packages?tenantId=${CONFIG.tenantId}`);
+        if (!response.ok) throw new Error('Failed to load packages');
+
+        const data = await response.json();
+        state.packages = data.packages;
+
+        renderPackages();
+    } catch (error) {
+        console.error('Failed to load packages:', error);
+        elements.packagesList.innerHTML = '<p class="error">Failed to load packages. Please refresh.</p>';
+    }
+}
+
+async function checkMpesaConfigured() {
+    try {
+        const response = await fetch(`${CONFIG.apiBaseUrl}/portal/mpesa/check?tenantId=${CONFIG.tenantId}`);
+        if (response.ok) {
+            const data = await response.json();
+            return data.configured;
+        }
+    } catch (error) {
+        console.error('Failed to check M-Pesa config:', error);
+    }
+    return false;
+}
+
+// ============ Package Selection ============
+function renderPackages() {
+    if (state.packages.length === 0) {
+        elements.packagesList.innerHTML = '<p>No packages available</p>';
+        return;
+    }
+
+    elements.packagesList.innerHTML = state.packages.map(pkg => `
+        <div class="package-card" data-id="${pkg.id}" data-price="${pkg.price}">
+            <div class="package-info">
+                <h3>${pkg.name}</h3>
+                <div class="package-details">
+                    <span>📶 ${pkg.speed}</span>
+                    <span>📊 ${pkg.data}</span>
+                    <span>⏱️ ${pkg.duration}</span>
+                </div>
+            </div>
+            <div class="package-price">
+                KSH ${pkg.price}
+            </div>
+        </div>
+    `).join('');
+
+    // Add click handlers
+    document.querySelectorAll('.package-card').forEach(card => {
+        card.addEventListener('click', () => selectPackage(card.dataset.id));
+    });
+}
+
+function selectPackage(packageId) {
+    state.selectedPackage = state.packages.find(p => p.id === packageId);
+
+    if (state.selectedPackage) {
+        elements.selectedPrice.textContent = `KSH ${state.selectedPackage.price}`;
+        showSection('phone');
+        elements.smsFallback.classList.remove('hidden');
+    }
+}
+
+// ============ Phone Input ============
+function validatePhoneInput() {
+    const phone = elements.phoneInput.value.replace(/\D/g, '');
+    elements.phoneInput.value = phone;
+
+    // Enable pay button if valid (9 digits starting with 7 or 1)
+    const isValid = phone.length === 9 && (phone.startsWith('7') || phone.startsWith('1'));
+    elements.payBtn.disabled = !isValid;
+}
+
+// ============ Payment Flow ============
+async function initiatePayment() {
+    if (!state.selectedPackage) return;
+
+    const phone = '254' + elements.phoneInput.value;
+
+    showSection('payment');
+    elements.paymentMessage.textContent = 'Initiating payment...';
+
+    try {
+        const response = await fetch(`${CONFIG.apiBaseUrl}/portal/mpesa/initiate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                tenantId: CONFIG.tenantId,
+                phone: phone,
+                packageId: state.selectedPackage.id,
+                macAddress: CONFIG.macAddress,
+                nasIp: CONFIG.nasIp,
+            }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || data.message || 'Payment failed');
+        }
+
+        state.checkoutRequestId = data.checkoutRequestId;
+        elements.paymentMessage.textContent = data.message || 'Check your phone for the M-Pesa prompt';
+
+        // Start polling for status
+        startPolling();
+        startCountdown();
+
+    } catch (error) {
+        showError(error.message);
+        showSection('phone');
+    }
+}
+
+function startPolling() {
+    clearInterval(state.pollTimer);
+
+    state.pollTimer = setInterval(async () => {
+        try {
+            const response = await fetch(
+                `${CONFIG.apiBaseUrl}/portal/mpesa/status?checkoutRequestId=${state.checkoutRequestId}&tenantId=${CONFIG.tenantId}`
+            );
+
+            const data = await response.json();
+
+            if (data.status === 'completed') {
+                stopPolling();
+                showSuccess(data.username, data.password);
+            } else if (data.status === 'failed') {
+                stopPolling();
+                showError(data.message || 'Payment failed');
+                showSection('phone');
+            } else if (data.status === 'expired') {
+                stopPolling();
+                showError('Payment session expired. Please try again.');
+                showSection('packages');
+            }
+        } catch (error) {
+            console.error('Polling error:', error);
+        }
+    }, CONFIG.pollInterval);
+}
+
+function stopPolling() {
+    clearInterval(state.pollTimer);
+    clearInterval(state.countdownTimer);
+    state.pollTimer = null;
+    state.countdownTimer = null;
+}
+
+function startCountdown() {
+    state.countdownSeconds = 300; // 5 minutes
+    updateCountdownDisplay();
+
+    state.countdownTimer = setInterval(() => {
+        state.countdownSeconds--;
+        updateCountdownDisplay();
+
+        if (state.countdownSeconds <= 0) {
+            stopPolling();
+            showError('Payment session expired');
+            showSection('packages');
+        }
+    }, 1000);
+}
+
+function updateCountdownDisplay() {
+    const minutes = Math.floor(state.countdownSeconds / 60);
+    const seconds = state.countdownSeconds % 60;
+    elements.countdownTimer.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
+
+// ============ SMS Fallback ============
+function toggleSmsInput() {
+    elements.smsInputSection.classList.toggle('hidden');
+}
+
+async function verifySmsPayment() {
+    const smsText = elements.smsText.value.trim();
+
+    if (!smsText || smsText.length < 10) {
+        showError('Please paste a valid M-Pesa message');
+        return;
+    }
+
+    if (!state.selectedPackage) {
+        showError('Please select a package first');
+        return;
+    }
+
+    elements.verifySmsBtn.disabled = true;
+    elements.verifySmsBtn.textContent = 'Verifying...';
+
+    try {
+        const response = await fetch(`${CONFIG.apiBaseUrl}/portal/mpesa/verify-sms`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                tenantId: CONFIG.tenantId,
+                smsText: smsText,
+                packageId: state.selectedPackage.id,
+                macAddress: CONFIG.macAddress,
+                nasIp: CONFIG.nasIp,
+            }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || data.message || 'Verification failed');
+        }
+
+        showSuccess(data.username, data.password);
+
+    } catch (error) {
+        showError(error.message);
+    } finally {
+        elements.verifySmsBtn.disabled = false;
+        elements.verifySmsBtn.textContent = 'Verify Payment';
+    }
+}
+
+// ============ Voucher ============
+async function redeemVoucher() {
+    const code = elements.voucherInput.value.trim();
+
+    if (!code) {
+        showError('Please enter a voucher code');
+        return;
+    }
+
+    elements.redeemBtn.disabled = true;
+    elements.redeemBtn.textContent = 'Redeeming...';
+
+    try {
+        const response = await fetch(`${CONFIG.apiBaseUrl}/portal/voucher`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                code: code,
+                macAddress: CONFIG.macAddress,
+                nasId: CONFIG.nasIp,
+            }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || data.message || 'Invalid voucher');
+        }
+
+        // For vouchers, the session is created server-side
+        // The username is typically V-{CODE}
+        showSuccess(`V-${code.toUpperCase()}`, code.toUpperCase());
+
+    } catch (error) {
+        showError(error.message);
+    } finally {
+        elements.redeemBtn.disabled = false;
+        elements.redeemBtn.textContent = 'Redeem Voucher';
+    }
+}
+
+// ============ Success & Login ============
+function showSuccess(username, password) {
+    stopPolling();
+    hideError();
+
+    elements.successUsername.textContent = username;
+    elements.successPassword.textContent = password;
+
+    // Store credentials for form submission
+    state.credentials = { username, password };
+
+    showSection('success');
+}
+
+function submitLogin() {
+    if (!state.credentials) return;
+
+    // Set form values
+    elements.formUsername.value = state.credentials.username;
+    elements.formPassword.value = state.credentials.password;
+
+    // Submit the MikroTik login form
+    elements.mikrotikForm.submit();
+}
+
+// ============ UI Helpers ============
+function showSection(section) {
+    hideError();
+
+    elements.packagesSection.classList.toggle('hidden', section !== 'packages');
+    elements.phoneSection.classList.toggle('hidden', section !== 'phone');
+    elements.paymentSection.classList.toggle('hidden', section !== 'payment');
+    elements.successSection.classList.toggle('hidden', section !== 'success');
+
+    // Hide SMS fallback in payment and success
+    if (section === 'payment' || section === 'success') {
+        elements.smsFallback.classList.add('hidden');
+    }
+}
+
+function showError(message) {
+    elements.errorMessage.textContent = message;
+    elements.errorMessage.classList.remove('hidden');
+}
+
+function hideError() {
+    elements.errorMessage.classList.add('hidden');
+}

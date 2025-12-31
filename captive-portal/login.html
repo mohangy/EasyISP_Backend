@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>WiFi Login</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <!-- Header with branding -->
+        <header class="header">
+            <img id="logo" src="" alt="Logo" class="logo hidden">
+            <h1 id="company-name" class="company-name">WiFi Hotspot</h1>
+        </header>
+
+        <!-- Tab navigation -->
+        <div class="tabs">
+            <button class="tab active" data-tab="mpesa">M-Pesa</button>
+            <button class="tab" data-tab="voucher">Voucher</button>
+        </div>
+
+        <!-- M-Pesa Tab -->
+        <div id="mpesa-tab" class="tab-content active">
+            <!-- Package selection -->
+            <div id="packages-section" class="section">
+                <h2 class="section-title">Select a Package</h2>
+                <div id="packages-list" class="packages-grid">
+                    <div class="loading">Loading packages...</div>
+                </div>
+            </div>
+
+            <!-- Phone input -->
+            <div id="phone-section" class="section hidden">
+                <h2 class="section-title">Enter Phone Number</h2>
+                <div class="phone-input-group">
+                    <span class="country-code">+254</span>
+                    <input type="tel" id="phone-input" class="phone-input" placeholder="7XXXXXXXX" maxlength="9" pattern="[0-9]*">
+                </div>
+                <p class="helper-text">You will receive an M-Pesa prompt on this number</p>
+                <button id="pay-btn" class="btn btn-primary btn-large" disabled>
+                    Pay <span id="selected-price">KSH 0</span>
+                </button>
+                <button id="back-to-packages" class="btn btn-text">← Back to packages</button>
+            </div>
+
+            <!-- Payment processing -->
+            <div id="payment-section" class="section hidden">
+                <div class="payment-status">
+                    <div class="spinner"></div>
+                    <h2>Waiting for M-Pesa</h2>
+                    <p id="payment-message">Check your phone for the M-Pesa prompt and enter your PIN</p>
+                </div>
+                <div id="payment-countdown" class="countdown">
+                    <span id="countdown-timer">5:00</span> remaining
+                </div>
+            </div>
+
+            <!-- Success -->
+            <div id="success-section" class="section hidden">
+                <div class="success-icon">✓</div>
+                <h2>Payment Successful!</h2>
+                <div class="credentials-box">
+                    <p><strong>Username:</strong> <span id="success-username"></span></p>
+                    <p><strong>Password:</strong> <span id="success-password"></span></p>
+                </div>
+                <p class="helper-text">Use these credentials to connect to the internet</p>
+                <button id="connect-btn" class="btn btn-primary btn-large">Connect Now</button>
+            </div>
+
+            <!-- SMS Fallback -->
+            <div id="sms-fallback" class="sms-fallback hidden">
+                <button id="show-sms-btn" class="btn btn-text">Already paid? Paste M-Pesa message</button>
+                <div id="sms-input-section" class="hidden">
+                    <textarea id="sms-text" class="sms-textarea" placeholder="Paste your M-Pesa confirmation message here...
+Example: SJK4H7L2PQ Confirmed. Ksh500.00 sent to..."></textarea>
+                    <button id="verify-sms-btn" class="btn btn-secondary">Verify Payment</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Voucher Tab -->
+        <div id="voucher-tab" class="tab-content">
+            <div class="section">
+                <h2 class="section-title">Enter Voucher Code</h2>
+                <input type="text" id="voucher-input" class="voucher-input" placeholder="Enter voucher code" maxlength="20">
+                <button id="redeem-btn" class="btn btn-primary btn-large">Redeem Voucher</button>
+            </div>
+        </div>
+
+        <!-- Error display -->
+        <div id="error-message" class="error-message hidden"></div>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>Need help? <a id="support-link" href="tel:">Call Support</a></p>
+        </footer>
+    </div>
+
+    <!-- Hidden form for MikroTik login -->
+    <form id="mikrotik-form" action="$(link-login-only)" method="post" class="hidden">
+        <input type="hidden" name="username" id="form-username">
+        <input type="hidden" name="password" id="form-password">
+        <input type="hidden" name="dst" value="$(link-orig)">
+        <input type="hidden" name="popup" value="true">
+    </form>
+
+    <script src="script.js"></script>
+</body>
+</html>

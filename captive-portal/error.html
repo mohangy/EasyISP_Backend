@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Error - WiFi Hotspot</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1 class="company-name">WiFi Hotspot</h1>
+        </header>
+
+        <!-- Error Message -->
+        <div class="section" style="text-align: center; padding: 40px 0;">
+            <div class="success-icon" style="background: var(--error-color);">✕</div>
+            <h2 style="color: var(--error-color); margin-bottom: 16px;">Login Failed</h2>
+            <p style="color: var(--text-secondary); margin-bottom: 24px;">
+                $(error-orig)
+            </p>
+
+            <div class="error-message" style="display: block; text-align: left;">
+                <p><strong>Possible reasons:</strong></p>
+                <ul style="margin-top: 8px; padding-left: 20px;">
+                    <li>Invalid username or password</li>
+                    <li>Account has expired</li>
+                    <li>Data limit reached</li>
+                    <li>Account is suspended</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Try Again -->
+        <a href="$(link-login)" class="btn btn-primary btn-large"
+            style="text-decoration: none; display: block; text-align: center;">
+            Try Again
+        </a>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>Need help? Contact support</p>
+        </footer>
+    </div>
+</body>
+
+</html>

@@ -113,6 +113,14 @@ model Tenant {
   smsSenderId   String?
   smsBalance    Float        @default(0)
   
+  // M-Pesa Settings (per-tenant)
+  mpesaConsumerKey     String?
+  mpesaConsumerSecret  String?
+  mpesaShortcode       String?
+  mpesaPasskey         String?
+  mpesaCallbackUrl     String?
+  mpesaEnv             String?   @default("production") // "sandbox" or "production"
+  
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 
@@ -129,6 +137,7 @@ model Tenant {
   auditLogs  AuditLog[]
   accounts   ChartOfAccount[]
   vpnPeers   VPNPeer[]
+  pendingHotspotPayments PendingHotspotPayment[]
 
   @@index([status])
   @@index([isActivated])
@@ -214,7 +223,7 @@ model Package {
   uploadSpeed   Int            // Mbps
   burstDownload Int?           // Mbps
   burstUpload   Int?           // Mbps
-  sessionTime   Int?           // Minutes (for hotspot)
+  sessionTime   Int?           // Minutes (for hotspot) - also used as validity period in days for data packages
   dataLimit     BigInt?        // Bytes
   isActive      Boolean        @default(true)
   tenantId      String
@@ -226,6 +235,7 @@ model Package {
   customers Customer[]
   vouchers  Voucher[]
   routers   PackageRouter[]
+  pendingHotspotPayments PendingHotspotPayment[]
 
   @@index([tenantId])
   @@index([tenantId, type])
@@ -483,3 +493,30 @@ model VPNPeer {
   @@index([tenantId, status])
 }
 
+// ============ PENDING HOTSPOT PAYMENTS ============
+
+model PendingHotspotPayment {
+  id                 String   @id @default(uuid())
+  checkoutRequestId  String   @unique  // M-Pesa CheckoutRequestID
+  merchantRequestId  String             // M-Pesa MerchantRequestID
+  phone              String             // Customer phone number
+  amount             Float              // Amount paid
+  packageId          String             // Package being purchased
+  macAddress         String?            // Device MAC for auto-login
+  nasIp              String?            // Router IP for auto-login
+  status             String   @default("PENDING") // PENDING, COMPLETED, FAILED, EXPIRED
+  transactionCode    String?  @unique   // M-Pesa receipt number (becomes username/password)
+  customerId         String?            // Created customer ID after success
+  tenantId           String
+  createdAt          DateTime @default(now())
+  expiresAt          DateTime           // Auto-expire after 5 minutes
+
+  // Relations
+  tenant  Tenant  @relation(fields: [tenantId], references: [id])
+  package Package @relation(fields: [packageId], references: [id])
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([checkoutRequestId])
+  @@index([transactionCode])
+}

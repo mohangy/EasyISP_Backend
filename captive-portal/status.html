@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connected - WiFi Hotspot</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1 class="company-name">WiFi Hotspot</h1>
+        </header>
+
+        <!-- Connected Status -->
+        <div class="section" style="text-align: center; padding: 40px 0;">
+            <div class="success-icon">✓</div>
+            <h2 style="color: var(--success-color); margin-bottom: 16px;">You're Connected!</h2>
+            <p style="color: var(--text-secondary); margin-bottom: 24px;">
+                Enjoy your internet access
+            </p>
+
+            <!-- Session Info (populated by MikroTik) -->
+            <div class="credentials-box" style="text-align: left;">
+                <p><strong>Username:</strong> $(username)</p>
+                <p><strong>IP Address:</strong> $(ip)</p>
+                <p><strong>Connected Since:</strong> $(uptime)</p>
+                <p><strong>Data Used:</strong> $(bytes-in-nice) / $(bytes-out-nice)</p>
+            </div>
+        </div>
+
+        <!-- Logout Button -->
+        <form action="$(link-logout)" method="get">
+            <button type="submit" class="btn btn-secondary btn-large">
+                Disconnect
+            </button>
+        </form>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>Having issues? Refresh this page or reconnect to WiFi</p>
+        </footer>
+    </div>
+</body>
+
+</html>
