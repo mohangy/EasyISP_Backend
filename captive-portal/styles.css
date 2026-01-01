@@ -1033,3 +1033,31 @@ body {
         max-height: 55vh;
     }
 }
+
+/* ============ Error State ============ */
+.error-state {
+    text-align: center;
+    padding: 40px 20px;
+}
+
+.error-state .error-icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+}
+
+.error-state .error-title {
+    color: var(--text-secondary);
+    font-size: 14px;
+    margin-bottom: 20px;
+    line-height: 1.5;
+}
+
+/* ============ Copy Button States ============ */
+#copy-btn.copied {
+    background: var(--success-color);
+    color: white;
+}
+
+#copy-btn {
+    transition: all 0.2s ease;
+}

@@ -41,6 +41,7 @@ let state = {
     countdownTimer: null,
     countdownSeconds: 300,
     activeSession: null, // Stores active session data if found
+    receiptCode: null, // M-Pesa transaction code
 };
 
 // ============ DOM Elements ============
@@ -254,8 +255,27 @@ async function loadPackages() {
         renderPackages();
     } catch (error) {
         console.error('Failed to load packages:', error);
-        elements.packagesList.innerHTML = '<p class="error">Failed to load packages. Please refresh.</p>';
+
+        // Check if offline
+        const isOffline = !navigator.onLine;
+        const errorMessage = isOffline
+            ? 'No internet connection. Please check your WiFi and try again.'
+            : 'Unable to load packages. Please try again.';
+
+        elements.packagesList.innerHTML = `
+            <div class="error-state">
+                <div class="error-icon">${isOffline ? '📡' : '⚠️'}</div>
+                <p class="error-title">${errorMessage}</p>
+                <button class="btn btn-secondary" onclick="retryLoadPackages()">Try Again</button>
+            </div>
+        `;
     }
+}
+
+// Retry loading packages
+function retryLoadPackages() {
+    elements.packagesList.innerHTML = '<div class="loading">Loading packages...</div>';
+    loadPackages();
 }
 
 async function checkMpesaConfigured() {
@@ -307,6 +327,14 @@ function selectPackage(packageId) {
 // ============ Modal Functions ============
 function openModal() {
     elements.phoneModal.classList.add('active');
+
+    // Load saved phone number from localStorage
+    const savedPhone = localStorage.getItem('easyisp_phone');
+    if (savedPhone) {
+        elements.phoneInput.value = savedPhone;
+        validatePhoneInput(); // Trigger validation to enable button
+    }
+
     elements.phoneInput.focus();
     elements.smsFallback.classList.remove('hidden');
 }
@@ -412,6 +440,9 @@ async function initiatePayment() {
             throw new Error(data.error || data.message || 'Payment failed');
         }
 
+        // Save phone number to localStorage on successful initiation
+        localStorage.setItem('easyisp_phone', elements.phoneInput.value);
+
         state.checkoutRequestId = data.checkoutRequestId;
         elements.paymentMessage.textContent = data.message || 'Check your phone for the M-Pesa prompt';
 
@@ -438,6 +469,7 @@ function startPolling() {
 
             if (data.status === 'completed') {
                 stopPolling();
+                state.receiptCode = data.receiptCode || data.transactionId || data.username;
                 showSuccess(data.username, data.password);
             } else if (data.status === 'failed') {
                 stopPolling();
@@ -582,6 +614,13 @@ function showSuccess(username, password) {
     elements.successUsername.textContent = username;
     elements.successPassword.textContent = password;
 
+    // Show receipt code if available
+    const receiptEl = document.getElementById('success-receipt');
+    if (receiptEl && state.receiptCode) {
+        receiptEl.textContent = state.receiptCode;
+        receiptEl.parentElement.classList.remove('hidden');
+    }
+
     // Store credentials for form submission
     state.credentials = { username, password };
 
@@ -597,6 +636,35 @@ function submitLogin() {
 
     // Submit the MikroTik login form
     elements.mikrotikForm.submit();
+}
+
+// Copy credentials to clipboard
+function copyCredentials() {
+    if (!state.credentials) return;
+
+    const text = `Username: ${state.credentials.username}\nPassword: ${state.credentials.password}`;
+
+    navigator.clipboard.writeText(text).then(() => {
+        const btn = document.getElementById('copy-btn');
+        if (btn) {
+            const originalText = btn.textContent;
+            btn.textContent = 'Copied!';
+            btn.classList.add('copied');
+            setTimeout(() => {
+                btn.textContent = originalText;
+                btn.classList.remove('copied');
+            }, 2000);
+        }
+    }).catch(err => {
+        console.error('Failed to copy:', err);
+        // Fallback for older browsers
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+    });
 }
 
 // ============ UI Helpers ============

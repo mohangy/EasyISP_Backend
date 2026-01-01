@@ -11,9 +11,10 @@
 
 <body>
     <div class="container">
-        <!-- Header -->
+        <!-- Header with branding -->
         <header class="header">
-            <h1 class="company-name">WiFi Hotspot</h1>
+            <img id="logo" src="" alt="Logo" class="logo hidden">
+            <h1 id="company-name" class="company-name">WiFi Hotspot</h1>
         </header>
 
         <!-- Error Message -->
@@ -43,9 +44,42 @@
 
         <!-- Footer -->
         <footer class="footer">
-            <p>Need help? Contact support</p>
+            <p>Need help? <a id="support-link" href="tel:">Call Support</a></p>
         </footer>
     </div>
+
+    <script>
+        // Load tenant branding
+        const urlParams = new URLSearchParams(window.location.search);
+        const tenantId = urlParams.get('tenantId') || '';
+        const apiBaseUrl = window.location.origin + '/api';
+
+        if (tenantId) {
+            fetch(`${apiBaseUrl}/portal/tenant?tenantId=${tenantId}`)
+                .then(res => res.json())
+                .then(data => {
+                    document.getElementById('company-name').textContent = data.name;
+                    document.title = data.name + ' - Error';
+
+                    if (data.logo) {
+                        const logo = document.getElementById('logo');
+                        logo.src = data.logo;
+                        logo.classList.remove('hidden');
+                    }
+
+                    if (data.primaryColor) {
+                        document.documentElement.style.setProperty('--primary-color', data.primaryColor);
+                    }
+
+                    if (data.contact?.phone) {
+                        const supportLink = document.getElementById('support-link');
+                        supportLink.href = `tel:${data.contact.phone}`;
+                        supportLink.textContent = `Call ${data.contact.phone}`;
+                    }
+                })
+                .catch(err => console.error('Failed to load tenant info:', err));
+        }
+    </script>
 </body>
 
 </html>

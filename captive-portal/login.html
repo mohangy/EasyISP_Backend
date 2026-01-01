@@ -82,7 +82,12 @@ Example: SJK4H7L2PQ Confirmed. Ksh500.00 sent to..."></textarea>
                     <div class="credentials-box">
                         <p><strong>Username:</strong> <span id="success-username"></span></p>
                         <p><strong>Password:</strong> <span id="success-password"></span></p>
+                        <p class="hidden"><strong>Receipt:</strong> <span id="success-receipt"></span></p>
                     </div>
+                    <button id="copy-btn" class="btn btn-secondary" onclick="copyCredentials()"
+                        style="margin-bottom: 12px;">
+                        📋 Copy Credentials
+                    </button>
                     <p class="helper-text">Use these credentials to connect to the internet</p>
                     <button id="connect-btn" class="btn btn-primary btn-large">Connect Now</button>
                 </div>
