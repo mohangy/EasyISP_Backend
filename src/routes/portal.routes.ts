@@ -632,6 +632,12 @@ portalRoutes.post('/mpesa/verify-sms', async (c) => {
     }
 });
 
+// GET /api/portal/mpesa/callback - M-Pesa callback URL verification
+portalRoutes.get('/mpesa/callback', async (c) => {
+    logger.info('M-Pesa callback URL verification (GET request)');
+    return c.json({ ResultCode: 0, ResultDesc: 'Callback URL is reachable' });
+});
+
 // POST /api/portal/mpesa/callback - M-Pesa webhook callback (called by M-Pesa)
 portalRoutes.post('/mpesa/callback', async (c) => {
     try {
