@@ -700,3 +700,42 @@ function dismissSessionPopup() {
     elements.sessionPopup.classList.remove('active');
     state.activeSession = null;
 }
+
+// ============ FAQ Toggle ============
+function toggleFaq(button) {
+    const faqItem = button.closest('.faq-item');
+    const isActive = faqItem.classList.contains('active');
+
+    // Close all other FAQ items
+    document.querySelectorAll('.faq-item.active').forEach(item => {
+        if (item !== faqItem) {
+            item.classList.remove('active');
+        }
+    });
+
+    // Toggle current item
+    faqItem.classList.toggle('active', !isActive);
+}
+
+// ============ Terms & Privacy Modals ============
+function showTermsModal() {
+    document.getElementById('terms-modal').classList.add('active');
+}
+
+function closeTermsModal() {
+    document.getElementById('terms-modal').classList.remove('active');
+}
+
+function showPrivacyModal() {
+    document.getElementById('privacy-modal').classList.add('active');
+}
+
+function closePrivacyModal() {
+    document.getElementById('privacy-modal').classList.remove('active');
+}
+
+// Close modals on outside click
+document.addEventListener('click', (e) => {
+    if (e.target.id === 'terms-modal') closeTermsModal();
+    if (e.target.id === 'privacy-modal') closePrivacyModal();
+});
