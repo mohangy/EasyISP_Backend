@@ -223,6 +223,7 @@ async function loadTenantInfo() {
 
         // Update branding
         elements.companyName.textContent = data.name;
+        document.title = data.name + ' - WiFi Login';
 
         if (data.logo) {
             elements.logo.src = data.logo;
