@@ -734,8 +734,17 @@ function closePrivacyModal() {
     document.getElementById('privacy-modal').classList.remove('active');
 }
 
+function showFaqModal() {
+    document.getElementById('faq-modal').classList.add('active');
+}
+
+function closeFaqModal() {
+    document.getElementById('faq-modal').classList.remove('active');
+}
+
 // Close modals on outside click
 document.addEventListener('click', (e) => {
     if (e.target.id === 'terms-modal') closeTermsModal();
     if (e.target.id === 'privacy-modal') closePrivacyModal();
+    if (e.target.id === 'faq-modal') closeFaqModal();
 });

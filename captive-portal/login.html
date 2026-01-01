@@ -102,57 +102,12 @@ Example: SJK4H7L2PQ Confirmed. Ksh500.00 sent to..."></textarea>
         <!-- Error display -->
         <div id="error-message" class="error-message hidden"></div>
 
-        <!-- FAQ Section -->
-        <div class="faq-section">
-            <h2 class="faq-title">Frequently Asked Questions</h2>
-            <div class="faq-list">
-                <div class="faq-item">
-                    <button class="faq-question" onclick="toggleFaq(this)">
-                        <span>How do I connect after purchasing?</span>
-                        <span class="faq-icon">+</span>
-                    </button>
-                    <div class="faq-answer">
-                        <p>After successful M-Pesa payment, you'll receive login credentials. Click "Connect Now" or
-                            enter them manually in the WiFi login page.</p>
-                    </div>
-                </div>
-                <div class="faq-item">
-                    <button class="faq-question" onclick="toggleFaq(this)">
-                        <span>What if I don't receive the M-Pesa prompt?</span>
-                        <span class="faq-icon">+</span>
-                    </button>
-                    <div class="faq-answer">
-                        <p>Ensure your phone number is correct and has M-Pesa service. Try again or use "Already paid?
-                            Paste M-Pesa message" option if you completed payment manually.</p>
-                    </div>
-                </div>
-                <div class="faq-item">
-                    <button class="faq-question" onclick="toggleFaq(this)">
-                        <span>How long is my voucher valid?</span>
-                        <span class="faq-icon">+</span>
-                    </button>
-                    <div class="faq-answer">
-                        <p>Vouchers are valid for the duration specified in your package. Time starts counting when you
-                            first connect to the internet.</p>
-                    </div>
-                </div>
-                <div class="faq-item">
-                    <button class="faq-question" onclick="toggleFaq(this)">
-                        <span>Can I use my voucher on multiple devices?</span>
-                        <span class="faq-icon">+</span>
-                    </button>
-                    <div class="faq-answer">
-                        <p>Each voucher is limited to one device at a time. You can disconnect and reconnect on a
-                            different device if needed.</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-
         <!-- Footer -->
         <footer class="footer">
             <p>Need help? <a id="support-link" href="tel:">Call Support</a></p>
             <div class="footer-links">
+                <a href="#" onclick="showFaqModal(); return false;">FAQ</a>
+                <span class="footer-divider">•</span>
                 <a href="#" onclick="showTermsModal(); return false;">Terms & Conditions</a>
                 <span class="footer-divider">•</span>
                 <a href="#" onclick="showPrivacyModal(); return false;">Privacy Policy</a>
@@ -216,6 +171,59 @@ Example: SJK4H7L2PQ Confirmed. Ksh500.00 sent to..."></textarea>
                 <p>You may request access to or deletion of your personal data by contacting our support team.</p>
             </div>
             <button class="btn btn-primary btn-large" onclick="closePrivacyModal()">I Understand</button>
+        </div>
+    </div>
+
+    <!-- FAQ Modal -->
+    <div id="faq-modal" class="modal-overlay">
+        <div class="modal-content legal-modal">
+            <button class="modal-close" onclick="closeFaqModal()">&times;</button>
+            <h2 class="modal-title">Frequently Asked Questions</h2>
+            <div class="legal-content">
+                <div class="faq-list">
+                    <div class="faq-item">
+                        <button class="faq-question" onclick="toggleFaq(this)">
+                            <span>How do I connect after purchasing?</span>
+                            <span class="faq-icon">+</span>
+                        </button>
+                        <div class="faq-answer">
+                            <p>After successful M-Pesa payment, you'll receive login credentials. Click "Connect Now" or
+                                enter them manually in the WiFi login page.</p>
+                        </div>
+                    </div>
+                    <div class="faq-item">
+                        <button class="faq-question" onclick="toggleFaq(this)">
+                            <span>What if I don't receive the M-Pesa prompt?</span>
+                            <span class="faq-icon">+</span>
+                        </button>
+                        <div class="faq-answer">
+                            <p>Ensure your phone number is correct and has M-Pesa service. Try again or use "Already
+                                paid? Paste M-Pesa message" option if you completed payment manually.</p>
+                        </div>
+                    </div>
+                    <div class="faq-item">
+                        <button class="faq-question" onclick="toggleFaq(this)">
+                            <span>How long is my voucher valid?</span>
+                            <span class="faq-icon">+</span>
+                        </button>
+                        <div class="faq-answer">
+                            <p>Vouchers are valid for the duration specified in your package. Time starts counting when
+                                you first connect to the internet.</p>
+                        </div>
+                    </div>
+                    <div class="faq-item">
+                        <button class="faq-question" onclick="toggleFaq(this)">
+                            <span>Can I use my voucher on multiple devices?</span>
+                            <span class="faq-icon">+</span>
+                        </button>
+                        <div class="faq-answer">
+                            <p>Each voucher is limited to one device at a time. You can disconnect and reconnect on a
+                                different device if needed.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <button class="btn btn-primary btn-large" onclick="closeFaqModal()">Got It</button>
         </div>
     </div>
 
