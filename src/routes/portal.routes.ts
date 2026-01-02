@@ -537,11 +537,33 @@ portalRoutes.get('/mpesa/status', async (c) => {
         const mpesaStatus = await querySTKStatus(tenantId, checkoutRequestId);
 
         if (mpesaStatus.ResultCode === '0') {
-            // Payment successful! Callback may not have been received - complete the payment now
+            // Payment successful! But first, re-check if callback already processed it
+            const freshPayment = await prisma.pendingHotspotPayment.findUnique({
+                where: { checkoutRequestId },
+                include: { package: true },
+            });
+
+            // If already completed by callback, return the existing credentials
+            if (freshPayment?.status === 'COMPLETED' && freshPayment.transactionCode) {
+                logger.info({ checkoutRequestId }, 'Payment already completed by callback - returning existing credentials');
+
+                // Get the customer that was created
+                const existingCustomer = freshPayment.customerId
+                    ? await prisma.customer.findUnique({ where: { id: freshPayment.customerId } })
+                    : null;
+
+                return c.json({
+                    status: 'completed',
+                    username: existingCustomer?.username || freshPayment.transactionCode,
+                    password: existingCustomer?.password || freshPayment.transactionCode,
+                    package: freshPayment.package.name,
+                });
+            }
+
+            // Callback may not have been received - complete the payment now
             logger.info({ checkoutRequestId, mpesaStatus }, 'M-Pesa query shows successful payment - completing via polling');
 
             // Generate a receipt code from checkoutRequestId if not available
-            // The actual receipt comes from callback, but we can use a generated one as fallback
             const generatedReceipt = `HP${Date.now().toString(36).toUpperCase()}`;
 
             try {
