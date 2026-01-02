@@ -366,21 +366,33 @@ export async function initiateSTKPush(
 
     } else if (mpesaConfig.subType === 'BANK') {
         /**
-         * Bank Configuration - FROM PHP:
+         * Bank Configuration - Using shared authorized shortcode:
+         * 
+         * Two scenarios supported (same as BuyGoods):
+         * 1. Bank Paybill has its OWN API credentials
+         *    -> BusinessShortCode = Bank Paybill (same as PartyB)
+         *    -> No storeNumber needed
+         * 
+         * 2. Using a SEPARATE authorized shortcode (YOUR shortcode with API access)
+         *    -> BusinessShortCode = storeNumber (your shortcode, has API creds, used for password)
+         *    -> PartyB = shortcode (Bank Paybill where money goes)
          * 
          * $TransactionType = "CustomerPayBillOnline";
-         * $BusinessShortCode = Bank Paybill
-         * $AccountReference = Bank Account Number
+         * $AccountReference = Client's Bank Account Number
          */
-        businessShortCode = mpesaConfig.shortcode;  // Bank Paybill
-        partyB = mpesaConfig.shortcode;  // Same as BusinessShortCode for banks
+
+        // BusinessShortCode: Use storeNumber if available, otherwise fall back to Bank Paybill
+        businessShortCode = mpesaConfig.storeNumber || mpesaConfig.shortcode;
+        partyB = mpesaConfig.shortcode;  // Bank Paybill (e.g., 247247 for Equity)
         transactionType = 'CustomerPayBillOnline';
-        finalAccountRef = mpesaConfig.accountNumber || accountReference;
+        finalAccountRef = mpesaConfig.accountNumber || accountReference;  // Client's bank account number
 
         logger.info({
             tenantId,
             type: 'BANK',
-            paybill: businessShortCode,
+            businessShortCode,  // May be storeNumber (your API shortcode) or Bank Paybill
+            storeNumber: mpesaConfig.storeNumber || '(using Bank Paybill as fallback)',
+            bankPaybill: partyB,
             accountNumber: finalAccountRef,
             amount
         }, 'Bank STK Push parameters');
