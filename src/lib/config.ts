@@ -68,6 +68,14 @@ export const config = {
         passkey: getEnv('MPESA_PASSKEY', ''),
         callbackUrl: getEnv('MPESA_CALLBACK_URL', ''),
         webhookKey: getEnv('MPESA_WEBHOOK_KEY', ''),
+        // Default BuyGoods configuration (for tenants without own credentials)
+        buyGoods: {
+            tillNumber: getEnv('MPESA_BUYGOODS_TILL_NUMBER', ''),
+            storeNumber: getEnv('MPESA_BUYGOODS_STORE_NUMBER', ''),
+            consumerKey: getEnv('MPESA_BUYGOODS_CONSUMER_KEY', ''),
+            consumerSecret: getEnv('MPESA_BUYGOODS_CONSUMER_SECRET', ''),
+            passkey: getEnv('MPESA_BUYGOODS_PASSKEY', ''),
+        },
     },
 
     // SMS

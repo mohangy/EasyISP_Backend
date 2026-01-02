@@ -93,6 +93,7 @@ const tokenCache: Map<string, { token: string; expiresAt: number }> = new Map();
 
 /**
  * Get M-Pesa config for a tenant
+ * Falls back to default BuyGoods configuration if tenant hasn't set their own
  */
 export async function getTenantMpesaConfig(tenantId: string, purpose?: 'HOTSPOT' | 'PPPOE'): Promise<MpesaConfig | null> {
     const tenant = await prisma.tenant.findUnique({
@@ -118,7 +119,37 @@ export async function getTenantMpesaConfig(tenantId: string, purpose?: 'HOTSPOT'
         });
     }
 
-    if (!gateway || !gateway.consumerKey || !gateway.consumerSecret || !gateway.shortcode) {
+    if (!gateway) {
+        return null;
+    }
+
+    // Use system defaults for BuyGoods if tenant hasn't configured their own credentials
+    const isBuyGoods = gateway.subType === 'BUYGOODS';
+    const useDefaults = isBuyGoods && (
+        !gateway.consumerKey || 
+        !gateway.consumerSecret || 
+        !gateway.passkey || 
+        !gateway.storeNumber
+    );
+
+    if (useDefaults) {
+        logger.info({ tenantId, gatewayId: gateway.id }, 'Using default BuyGoods configuration for tenant');
+        
+        return {
+            subType: 'BUYGOODS',
+            consumerKey: config.mpesa.buyGoods.consumerKey || gateway.consumerKey || '',
+            consumerSecret: config.mpesa.buyGoods.consumerSecret || gateway.consumerSecret || '',
+            shortcode: gateway.shortcode || config.mpesa.buyGoods.tillNumber,
+            storeNumber: gateway.storeNumber || config.mpesa.buyGoods.storeNumber,
+            accountNumber: gateway.accountNumber || undefined,
+            passkey: config.mpesa.buyGoods.passkey || gateway.passkey || '',
+            callbackUrl: (tenant as any)?.mpesaCallbackUrl || config.mpesa.callbackUrl || '',
+            env: (gateway.env as 'sandbox' | 'production') || config.mpesa.env,
+        };
+    }
+
+    // For non-BuyGoods or fully configured BuyGoods, use gateway config as-is
+    if (!gateway.consumerKey || !gateway.consumerSecret || !gateway.shortcode) {
         return null;
     }
 
