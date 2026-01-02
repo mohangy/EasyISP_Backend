@@ -93,7 +93,8 @@ const tokenCache: Map<string, { token: string; expiresAt: number }> = new Map();
 
 /**
  * Get M-Pesa config for a tenant
- * Falls back to default BuyGoods configuration if tenant hasn't set their own
+ * Falls back to default BuyGoods credentials (consumer key, secret, passkey) if tenant hasn't set their own
+ * NOTE: Till Number (shortcode) and Store Number must be tenant-specific and are NOT defaulted
  */
 export async function getTenantMpesaConfig(tenantId: string, purpose?: 'HOTSPOT' | 'PPPOE'): Promise<MpesaConfig | null> {
     const tenant = await prisma.tenant.findUnique({
@@ -119,37 +120,43 @@ export async function getTenantMpesaConfig(tenantId: string, purpose?: 'HOTSPOT'
         });
     }
 
-    if (!gateway) {
+    if (!gateway || !gateway.shortcode) {
         return null;
     }
 
-    // Use system defaults for BuyGoods if tenant hasn't configured their own credentials
+    // For BuyGoods: Use system defaults for API credentials if tenant hasn't configured their own
+    // BUT shortcode (till number) and storeNumber must always be tenant-specific
     const isBuyGoods = gateway.subType === 'BUYGOODS';
-    const useDefaults = isBuyGoods && (
+    const useDefaultCredentials = isBuyGoods && (
         !gateway.consumerKey || 
         !gateway.consumerSecret || 
-        !gateway.passkey || 
-        !gateway.storeNumber
+        !gateway.passkey
     );
 
-    if (useDefaults) {
-        logger.info({ tenantId, gatewayId: gateway.id }, 'Using default BuyGoods configuration for tenant');
+    if (useDefaultCredentials) {
+        logger.info({ tenantId, gatewayId: gateway.id }, 'Using default BuyGoods API credentials for tenant');
+        
+        // Ensure store number is provided by tenant for BuyGoods
+        if (!gateway.storeNumber) {
+            logger.error({ tenantId, gatewayId: gateway.id }, 'BuyGoods gateway missing store number');
+            return null;
+        }
         
         return {
             subType: 'BUYGOODS',
-            consumerKey: config.mpesa.buyGoods.consumerKey || gateway.consumerKey || '',
-            consumerSecret: config.mpesa.buyGoods.consumerSecret || gateway.consumerSecret || '',
-            shortcode: gateway.shortcode || config.mpesa.buyGoods.tillNumber,
-            storeNumber: gateway.storeNumber || config.mpesa.buyGoods.storeNumber,
+            consumerKey: gateway.consumerKey || config.mpesa.buyGoods.consumerKey,
+            consumerSecret: gateway.consumerSecret || config.mpesa.buyGoods.consumerSecret,
+            shortcode: gateway.shortcode, // Tenant's till number (never defaulted)
+            storeNumber: gateway.storeNumber, // Tenant's store number (never defaulted)
             accountNumber: gateway.accountNumber || undefined,
-            passkey: config.mpesa.buyGoods.passkey || gateway.passkey || '',
+            passkey: gateway.passkey || config.mpesa.buyGoods.passkey,
             callbackUrl: (tenant as any)?.mpesaCallbackUrl || config.mpesa.callbackUrl || '',
             env: (gateway.env as 'sandbox' | 'production') || config.mpesa.env,
         };
     }
 
     // For non-BuyGoods or fully configured BuyGoods, use gateway config as-is
-    if (!gateway.consumerKey || !gateway.consumerSecret || !gateway.shortcode) {
+    if (!gateway.consumerKey || !gateway.consumerSecret) {
         return null;
     }
 
