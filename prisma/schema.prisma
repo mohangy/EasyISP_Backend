@@ -168,6 +168,7 @@ model User {
   role               Role       @default(STAFF)
   status             UserStatus @default(ACTIVE)
   profilePicture     String?    // URL to profile image
+  phone              String?    // Phone number for SMS notifications
   addedPermissions   String[]   @default([])
   removedPermissions String[]   @default([])
   tenantId           String

@@ -184,7 +184,7 @@ ticketRoutes.post('/', requirePermission('tickets:create'), async (c) => {
 
     // If assigned, send SMS notification
     if (data.assignedToId) {
-        await sendAssignmentNotification(tenantId, ticket.id, data.assignedToId, ticket.title);
+        await sendAssignmentNotification(tenantId, ticket.id, data.assignedToId, ticket.title, ticket.description, ticket.priority);
     }
 
     // Audit log
@@ -275,7 +275,7 @@ ticketRoutes.put('/:id/assign', requirePermission('tickets:assign'), async (c) =
     });
 
     // Send SMS notification to assignee
-    await sendAssignmentNotification(tenantId, ticket.id, assignedToId, ticket.title);
+    await sendAssignmentNotification(tenantId, ticket.id, assignedToId, ticket.title, ticket.description, ticket.priority);
 
     // Audit log
     await createAuditLog({
@@ -361,36 +361,59 @@ ticketRoutes.delete('/:id', requirePermission('tickets:create'), async (c) => {
 });
 
 // Helper: Send SMS notification to assigned team member
-async function sendAssignmentNotification(tenantId: string, ticketId: string, userId: string, ticketTitle: string) {
+async function sendAssignmentNotification(tenantId: string, ticketId: string, userId: string, ticketTitle: string, ticketDescription?: string, priority?: string) {
     try {
         const assignee = await prisma.user.findUnique({
             where: { id: userId },
-            select: { name: true, email: true },
+            select: { name: true, email: true, phone: true },
         });
 
-        // Try to get phone from user profile or tenant settings
-        // For now, we'll log if no phone available
-        // In production, you'd want to add a phone field to User model
+        if (!assignee) {
+            logger.warn({ ticketId, userId }, 'Assignee not found for ticket notification');
+            return;
+        }
+
+        if (!assignee.phone) {
+            logger.warn({
+                ticketId,
+                assignee: assignee.name,
+            }, 'Assignee has no phone number - cannot send SMS notification');
+            return;
+        }
 
         const tenant = await prisma.tenant.findUnique({
             where: { id: tenantId },
-            select: { businessName: true, phone: true },
+            select: { businessName: true },
         });
 
-        // For now, log the assignment - in production add phone to User model
-        logger.info({
-            ticketId,
-            assignee: assignee?.name,
-            ticketTitle,
-        }, 'Ticket assigned - SMS notification would be sent here');
+        // Build the SMS message with ticket details
+        const priorityLabel = priority ? ` [${priority}]` : '';
+        const message = `New Support Ticket${priorityLabel} assigned to you:\n` +
+            `Title: ${ticketTitle}\n` +
+            `${ticketDescription ? `Details: ${ticketDescription.substring(0, 100)}${ticketDescription.length > 100 ? '...' : ''}\n` : ''}` +
+            `Login to ${tenant?.businessName || 'the portal'} to view and resolve.`;
 
-        // If tenant has SMS configured and assignee has phone (future enhancement):
-        // await smsService.sendSms(
-        //     tenantId,
-        //     assigneePhone,
-        //     `New ticket assigned to you: "${ticketTitle}". Login to the portal to view details.`,
-        //     'TICKET_ASSIGNMENT'
-        // );
+        // Send SMS
+        const result = await smsService.sendSms(
+            tenantId,
+            assignee.phone,
+            message,
+            'TICKET_ASSIGNMENT'
+        );
+
+        if (result.success) {
+            logger.info({
+                ticketId,
+                assignee: assignee.name,
+                phone: assignee.phone,
+            }, 'Ticket assignment SMS notification sent');
+        } else {
+            logger.warn({
+                ticketId,
+                assignee: assignee.name,
+                error: result.error,
+            }, 'Failed to send ticket assignment SMS');
+        }
 
     } catch (error) {
         logger.error({ error, ticketId, userId }, 'Failed to send ticket assignment notification');
