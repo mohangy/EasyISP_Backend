@@ -21,7 +21,8 @@ const manualPaymentSchema = z.object({
 });
 
 // GET /api/payments/electronic - List M-Pesa transactions
-authenticatedRoutes.get('/electronic', requirePermission('payments:view_electronic'), async (c) => {
+// GET /api/payments/mpesa - Alias for frontend compatibility
+const getMpesaTransactions = async (c: any) => {
     const tenantId = c.get('tenantId');
     const page = parseInt(c.req.query('page') ?? '1');
     const pageSize = parseInt(c.req.query('pageSize') ?? '20');
@@ -81,7 +82,11 @@ authenticatedRoutes.get('/electronic', requirePermission('payments:view_electron
         page,
         pageSize,
     });
-});
+};
+
+// Register both paths for the same handler
+authenticatedRoutes.get('/electronic', requirePermission('payments:view_electronic'), getMpesaTransactions);
+authenticatedRoutes.get('/mpesa', requirePermission('payments:view_electronic'), getMpesaTransactions);
 
 // GET /api/payments/mpesa/stats - M-Pesa statistics
 authenticatedRoutes.get('/mpesa/stats', requirePermission('payments:view_electronic'), async (c) => {
