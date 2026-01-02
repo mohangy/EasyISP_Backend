@@ -335,21 +335,22 @@ export async function initiateSTKPush(
         /**
          * BuyGoods (Till) Configuration - FROM PHP:
          * 
-         * $TransactionType = "CustomerBuyGoodsOnline";
-         * $BusinessShortCode = empty($BusinessShortCode) ? $PartyB : $BusinessShortCode;
-         *   -> This means: Use StoreNumber if available, otherwise Till
-         * $PartyB = empty($Till) ? $PartyB : $Till;
-         *   -> This means: PartyB must be the Till Number
+         * Two scenarios supported:
+         * 1. Till has its OWN API credentials (Consumer Key, Secret, Passkey)
+         *    -> BusinessShortCode = Till number (same as PartyB)
+         *    -> No storeNumber needed
          * 
-         * The BusinessShortCode in BuyGoods is the "Head Office" or "Store Number"
-         * which is used for password generation.
-         * PartyB is the actual Till Number where money goes.
+         * 2. Using a SEPARATE authorized shortcode (e.g., Head Office Paybill with API access)
+         *    -> BusinessShortCode = storeNumber (has API creds, used for password)
+         *    -> PartyB = Till number (where money goes)
+         * 
+         * PHP: $BusinessShortCode = empty($BusinessShortCode) ? $PartyB : $BusinessShortCode;
+         * Password = base64(BusinessShortCode + passKey + Timestamp)
+         * TransactionType = "CustomerBuyGoodsOnline"
          */
-        if (!mpesaConfig.storeNumber) {
-            throw new Error('BuyGoods configuration requires Store Number (Head Office shortcode). Please configure it in Settings.');
-        }
 
-        businessShortCode = mpesaConfig.storeNumber;  // Head Office / Store Number
+        // BusinessShortCode: Use storeNumber if available, otherwise fall back to Till (shortcode)
+        businessShortCode = mpesaConfig.storeNumber || mpesaConfig.shortcode;
         partyB = mpesaConfig.shortcode;  // Till Number
         transactionType = 'CustomerBuyGoodsOnline';
         finalAccountRef = accountReference;  // Not typically used for BuyGoods but required by API
@@ -357,7 +358,8 @@ export async function initiateSTKPush(
         logger.info({
             tenantId,
             type: 'BUYGOODS',
-            storeNumber: businessShortCode,
+            businessShortCode,  // May be storeNumber or Till (fallback)
+            storeNumber: mpesaConfig.storeNumber || '(using Till as fallback)',
             tillNumber: partyB,
             amount
         }, 'BuyGoods STK Push parameters');
