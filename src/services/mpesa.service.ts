@@ -142,7 +142,7 @@ export async function getTenantMpesaConfig(tenantId: string, purpose?: 'HOTSPOT'
             consumerKey: gateway.consumerKey || config.mpesa.buyGoods.consumerKey,
             consumerSecret: gateway.consumerSecret || config.mpesa.buyGoods.consumerSecret,
             shortcode: gateway.shortcode, // Tenant's till number (never defaulted)
-            storeNumber: gateway.storeNumber || undefined, // Optional - will use till number if not provided
+            storeNumber: gateway.storeNumber || undefined, // Optional - undefined if not provided, fallback to till number during STK Push
             accountNumber: gateway.accountNumber || undefined,
             passkey: gateway.passkey || config.mpesa.buyGoods.passkey,
             callbackUrl: (tenant as any)?.mpesaCallbackUrl || config.mpesa.callbackUrl || '',
@@ -335,8 +335,8 @@ export async function initiateSTKPush(
     let finalAccountRef = accountReference;
 
     if (config.subType === 'BUYGOODS') {
-        // Buy Goods: BusinessShortCode is Store Number, PartyB is Till Number
-        businessShortCode = config.storeNumber || config.shortcode; // Fallback if store number missing
+        // BuyGoods: BusinessShortCode uses store number if provided, otherwise defaults to till number; PartyB is till number
+        businessShortCode = config.storeNumber || config.shortcode;
         partyB = config.shortcode;
         transactionType = 'CustomerBuyGoodsOnline';
     } else if (config.subType === 'BANK') {
