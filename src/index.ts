@@ -30,6 +30,7 @@ import { portalRoutes } from './routes/portal.routes.js';
 import { vpnRoutes } from './routes/vpn.routes.js';
 import { snmpRoutes } from './routes/snmp.routes.js';
 import { sessionRoutes } from './routes/session.routes.js';
+import { ticketRoutes } from './routes/ticket.routes.js';
 
 import { serveStatic } from '@hono/node-server/serve-static';
 
@@ -81,6 +82,7 @@ api.route('/portal', portalRoutes);
 api.route('/vpn', vpnRoutes);
 api.route('/snmp', snmpRoutes);
 api.route('/sessions', sessionRoutes);
+api.route('/tickets', ticketRoutes);
 
 // Mount API routes
 app.route('/api', api);

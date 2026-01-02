@@ -87,6 +87,20 @@ enum SmsProvider {
   ADVANTA
 }
 
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
 // ============ MODELS ============
 
 model Tenant {
@@ -568,4 +582,38 @@ model SmsGateway {
   updatedAt   DateTime @updatedAt
 
   @@index([tenantId])
+}
+
+// ============ SUPPORT TICKETS ============
+
+model Ticket {
+  id            String         @id @default(uuid())
+  title         String
+  description   String
+  status        TicketStatus   @default(OPEN)
+  priority      TicketPriority @default(MEDIUM)
+  
+  // Customer this ticket is about (optional)
+  customerId    String?
+  customerName  String?
+  customerPhone String?
+  
+  // Assignment
+  assignedToId  String?        // User ID of assigned team member
+  assignedAt    DateTime?
+  
+  // Resolution
+  resolvedAt    DateTime?
+  resolvedById  String?
+  resolution    String?        // Resolution notes
+  
+  // Audit
+  createdById   String         // User ID who created the ticket
+  tenantId      String
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([assignedToId])
 }
