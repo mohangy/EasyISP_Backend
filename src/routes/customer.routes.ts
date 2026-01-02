@@ -125,6 +125,7 @@ customerRoutes.get('/:id', async (c) => {
         throw new AppError(404, 'Customer not found');
     }
 
+    // Convert BigInt/Decimal values to Numbers for JSON serialization
     return c.json({
         id: customer.id,
         username: customer.username,
@@ -141,9 +142,14 @@ customerRoutes.get('/:id', async (c) => {
         houseNumber: customer.houseNumber,
         lastIp: customer.lastIp,
         lastMac: customer.lastMac,
-        walletBalance: customer.walletBalance,
-        totalSpent: customer.totalSpent,
-        package: customer.package,
+        walletBalance: Number(customer.walletBalance),
+        totalSpent: Number(customer.totalSpent),
+        package: customer.package ? {
+            ...customer.package,
+            price: Number(customer.package.price),
+            sessionTime: customer.package.sessionTime ? Number(customer.package.sessionTime) : null,
+            bytesQuota: customer.package.bytesQuota ? Number(customer.package.bytesQuota) : null,
+        } : null,
         router: customer.nas,
         createdAt: customer.createdAt,
     });
