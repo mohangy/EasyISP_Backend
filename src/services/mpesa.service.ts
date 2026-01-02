@@ -264,114 +264,265 @@ function generateTimestamp(): string {
 
 /**
  * Initiate STK Push
+ * 
+ * Based on PHP reference implementation from BillNasi:
+ * - For PAYBILL: BusinessShortCode = Paybill, PartyB = Paybill
+ * - For BUYGOODS: BusinessShortCode = StoreNumber (Head Office), PartyB = Till Number
+ * - For BANK: BusinessShortCode = Bank Paybill, AccountReference = Target Account
+ * 
+ * Password is ALWAYS: base64(BusinessShortCode + passkey + timestamp)
  */
 export async function initiateSTKPush(
     tenantId: string,
     phone: string,
     amount: number,
     accountReference: string,
-    transactionDesc: string = 'Hotspot Payment'
+    transactionDesc: string = 'Payment',
+    options?: {
+        packageId?: string;  // For amount validation
+        validateAmount?: boolean;
+        purpose?: 'HOTSPOT' | 'PPPOE';
+    }
 ): Promise<STKPushResponse> {
-    const config = await getTenantMpesaConfig(tenantId);
-    if (!config) {
+    const mpesaConfig = await getTenantMpesaConfig(tenantId, options?.purpose);
+    if (!mpesaConfig) {
         throw new Error('M-Pesa not configured for this tenant');
     }
 
     // Validate configuration before proceeding
-    const validation = validateBuyGoodsConfig(config);
+    const validation = validateBuyGoodsConfig(mpesaConfig);
     if (!validation.valid) {
         const errorMsg = `M-Pesa configuration invalid: ${validation.errors.join(', ')}`;
         logger.error({ tenantId, errors: validation.errors, configType: validation.configType }, errorMsg);
         throw new Error(errorMsg);
     }
 
-    logger.info({
-        tenantId,
-        configType: validation.configType,
-        tillNumber: validation.details?.tillNumber,
-        storeNumber: validation.details?.storeNumber
-    }, 'Initiating STK Push with validated config');
+    // Amount validation (optional, based on PHP reference)
+    if (options?.validateAmount && options?.packageId) {
+        const pkg = await prisma.package.findUnique({
+            where: { id: options.packageId },
+            select: { price: true, name: true }
+        });
 
-    const token = await getAccessToken(tenantId);
-    const baseUrl = getBaseUrl(config.env);
-    const timestamp = generateTimestamp();
-    // Determine parameters based on subType
-    let businessShortCode = config.shortcode;
-    let partyB = config.shortcode;
-    let transactionType = 'CustomerPayBillOnline';
-    let finalAccountRef = accountReference;
-
-    if (config.subType === 'BUYGOODS') {
-        // Buy Goods: BusinessShortCode is Store Number, PartyB is Till Number
-        businessShortCode = config.storeNumber || config.shortcode; // Fallback if store number missing
-        partyB = config.shortcode;
-        transactionType = 'CustomerBuyGoodsOnline';
-    } else if (config.subType === 'BANK') {
-        // Bank: BusinessShortCode is Bank Paybill, AccountRef is Target Account
-        businessShortCode = config.shortcode;
-        partyB = config.shortcode;
-        finalAccountRef = config.accountNumber || accountReference;
-        transactionType = 'CustomerPayBillOnline';
+        if (pkg && pkg.price !== amount) {
+            logger.warn({
+                tenantId,
+                packageId: options.packageId,
+                expectedAmount: pkg.price,
+                receivedAmount: amount
+            }, 'Amount mismatch - using package price');
+            amount = pkg.price;
+        }
     }
 
-    const password = generatePassword(businessShortCode, config.passkey, timestamp);
+    // Ensure amount is valid
+    amount = Math.max(1, Math.round(amount));
+
+    const token = await getAccessToken(tenantId, options?.purpose);
+    const baseUrl = getBaseUrl(mpesaConfig.env);
+    const timestamp = generateTimestamp();
     const formattedPhone = formatPhoneNumber(phone);
 
+    // ============================================
+    // CRITICAL: Parameter determination per PHP reference
+    // ============================================
+    let businessShortCode: string;
+    let partyB: string;
+    let transactionType: string;
+    let finalAccountRef: string;
+
+    if (mpesaConfig.subType === 'BUYGOODS') {
+        /**
+         * BuyGoods (Till) Configuration - FROM PHP:
+         * 
+         * $TransactionType = "CustomerBuyGoodsOnline";
+         * $BusinessShortCode = empty($BusinessShortCode) ? $PartyB : $BusinessShortCode;
+         *   -> This means: Use StoreNumber if available, otherwise Till
+         * $PartyB = empty($Till) ? $PartyB : $Till;
+         *   -> This means: PartyB must be the Till Number
+         * 
+         * The BusinessShortCode in BuyGoods is the "Head Office" or "Store Number"
+         * which is used for password generation.
+         * PartyB is the actual Till Number where money goes.
+         */
+        if (!mpesaConfig.storeNumber) {
+            throw new Error('BuyGoods configuration requires Store Number (Head Office shortcode). Please configure it in Settings.');
+        }
+
+        businessShortCode = mpesaConfig.storeNumber;  // Head Office / Store Number
+        partyB = mpesaConfig.shortcode;  // Till Number
+        transactionType = 'CustomerBuyGoodsOnline';
+        finalAccountRef = accountReference;  // Not typically used for BuyGoods but required by API
+
+        logger.info({
+            tenantId,
+            type: 'BUYGOODS',
+            storeNumber: businessShortCode,
+            tillNumber: partyB,
+            amount
+        }, 'BuyGoods STK Push parameters');
+
+    } else if (mpesaConfig.subType === 'BANK') {
+        /**
+         * Bank Configuration - FROM PHP:
+         * 
+         * $TransactionType = "CustomerPayBillOnline";
+         * $BusinessShortCode = Bank Paybill
+         * $AccountReference = Bank Account Number
+         */
+        businessShortCode = mpesaConfig.shortcode;  // Bank Paybill
+        partyB = mpesaConfig.shortcode;  // Same as BusinessShortCode for banks
+        transactionType = 'CustomerPayBillOnline';
+        finalAccountRef = mpesaConfig.accountNumber || accountReference;
+
+        logger.info({
+            tenantId,
+            type: 'BANK',
+            paybill: businessShortCode,
+            accountNumber: finalAccountRef,
+            amount
+        }, 'Bank STK Push parameters');
+
+    } else {
+        /**
+         * PayBill Configuration - FROM PHP:
+         * 
+         * $TransactionType = "CustomerPayBillOnline";
+         * $BusinessShortCode = Paybill Number
+         * $PartyB = Paybill Number (same)
+         */
+        businessShortCode = mpesaConfig.shortcode;  // Paybill
+        partyB = mpesaConfig.shortcode;  // Same as BusinessShortCode
+        transactionType = 'CustomerPayBillOnline';
+        finalAccountRef = accountReference;
+
+        logger.info({
+            tenantId,
+            type: 'PAYBILL',
+            paybill: businessShortCode,
+            accountReference: finalAccountRef,
+            amount
+        }, 'PayBill STK Push parameters');
+    }
+
+    // Generate password using BusinessShortCode (critical for BuyGoods!)
+    const password = generatePassword(businessShortCode, mpesaConfig.passkey, timestamp);
+
+    // Build the STK Push payload
     const payload = {
         BusinessShortCode: businessShortCode,
         Password: password,
         Timestamp: timestamp,
         TransactionType: transactionType,
-        Amount: Math.round(amount),
+        Amount: amount,
         PartyA: formattedPhone,
         PartyB: partyB,
         PhoneNumber: formattedPhone,
-        CallBackURL: config.callbackUrl,
-        AccountReference: finalAccountRef,
-        TransactionDesc: transactionDesc,
+        CallBackURL: mpesaConfig.callbackUrl,
+        AccountReference: finalAccountRef.substring(0, 12),  // Max 12 chars
+        TransactionDesc: transactionDesc.substring(0, 13),   // Max 13 chars
     };
 
-    logger.info({ phone: formattedPhone, amount, tenantId }, 'Initiating STK Push');
+    logger.info({
+        phone: formattedPhone,
+        amount,
+        tenantId,
+        transactionType,
+        businessShortCode,
+        partyB
+    }, 'Initiating STK Push');
 
-    const response = await fetch(`${baseUrl}/mpesa/stkpush/v1/processrequest`, {
-        method: 'POST',
-        headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-    });
+    // Make the request with timeout (60 seconds like PHP)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60000);
 
-    const data = await response.json() as STKPushResponse;
+    try {
+        const response = await fetch(`${baseUrl}/mpesa/stkpush/v1/processrequest`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload),
+            signal: controller.signal,
+        });
 
-    if (data.ResponseCode !== '0') {
-        logger.error({ data, tenantId }, 'STK Push failed');
-        throw new Error(data.ResponseDescription || 'STK Push failed');
+        clearTimeout(timeoutId);
+
+        const responseText = await response.text();
+        let data: STKPushResponse & { errorMessage?: string; errorCode?: string };
+
+        try {
+            data = JSON.parse(responseText);
+        } catch (parseError) {
+            logger.error({ responseText, tenantId }, 'Failed to parse M-Pesa STK response');
+            throw new Error('Invalid response from M-Pesa API');
+        }
+
+        // Check for error response
+        if (data.errorMessage) {
+            logger.error({
+                errorMessage: data.errorMessage,
+                errorCode: data.errorCode,
+                tenantId,
+                payload: { ...payload, Password: '[REDACTED]' }
+            }, 'M-Pesa STK Push error response');
+            throw new Error(`M-Pesa Error: ${data.errorMessage}`);
+        }
+
+        if (data.ResponseCode !== '0') {
+            logger.error({ data, tenantId }, 'STK Push failed');
+            throw new Error(data.ResponseDescription || data.CustomerMessage || 'STK Push failed');
+        }
+
+        logger.info({
+            checkoutRequestId: data.CheckoutRequestID,
+            merchantRequestId: data.MerchantRequestID,
+            tenantId
+        }, 'STK Push initiated successfully');
+
+        return data;
+
+    } catch (error: any) {
+        clearTimeout(timeoutId);
+
+        if (error.name === 'AbortError') {
+            logger.error({ tenantId, phone: formattedPhone }, 'STK Push request timed out');
+            throw new Error('M-Pesa request timed out. Please try again.');
+        }
+
+        throw error;
     }
-
-    logger.info({ checkoutRequestId: data.CheckoutRequestID, tenantId }, 'STK Push initiated successfully');
-    return data;
 }
 
 /**
  * Query STK Push status
+ * 
+ * Note: For BuyGoods, must use storeNumber as BusinessShortCode (same as initiateSTKPush)
  */
 export async function querySTKStatus(
     tenantId: string,
     checkoutRequestId: string
 ): Promise<STKQueryResponse> {
-    const config = await getTenantMpesaConfig(tenantId);
-    if (!config) {
+    const mpesaConfig = await getTenantMpesaConfig(tenantId);
+    if (!mpesaConfig) {
         throw new Error('M-Pesa not configured for this tenant');
     }
 
     const token = await getAccessToken(tenantId);
-    const baseUrl = getBaseUrl(config.env);
+    const baseUrl = getBaseUrl(mpesaConfig.env);
     const timestamp = generateTimestamp();
-    const password = generatePassword(config.shortcode, config.passkey, timestamp);
+
+    // Use correct BusinessShortCode based on subType (same logic as initiateSTKPush)
+    let businessShortCode = mpesaConfig.shortcode;
+    if (mpesaConfig.subType === 'BUYGOODS' && mpesaConfig.storeNumber) {
+        businessShortCode = mpesaConfig.storeNumber;
+    }
+
+    const password = generatePassword(businessShortCode, mpesaConfig.passkey, timestamp);
 
     const payload = {
-        BusinessShortCode: config.shortcode,
+        BusinessShortCode: businessShortCode,
         Password: password,
         Timestamp: timestamp,
         CheckoutRequestID: checkoutRequestId,
