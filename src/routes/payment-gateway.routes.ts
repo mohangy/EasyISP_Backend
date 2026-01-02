@@ -15,12 +15,12 @@ const gatewaySchema = z.object({
     type: z.string().default('MPESA_API'),
     subType: z.enum(['PAYBILL', 'BUYGOODS', 'BANK']).default('PAYBILL'),
     name: z.string().optional(),
-    shortcode: z.string().min(3),
-    storeNumber: z.string().optional(),
+    shortcode: z.string().min(3, 'Shortcode must be at least 3 characters'), // Till number for BuyGoods, Paybill for others
+    storeNumber: z.string().optional(), // Head Office/Store Number for BuyGoods
     accountNumber: z.string().optional(),
-    consumerKey: z.string().optional(),
-    consumerSecret: z.string().optional(),
-    passkey: z.string().optional(),
+    consumerKey: z.string().optional(), // Optional - will use defaults if not provided for BuyGoods
+    consumerSecret: z.string().optional(), // Optional - will use defaults if not provided for BuyGoods
+    passkey: z.string().optional(), // Optional - will use defaults if not provided for BuyGoods
     env: z.enum(['sandbox', 'production']).default('production'),
     forHotspot: z.boolean().default(false),
     forPppoe: z.boolean().default(false),

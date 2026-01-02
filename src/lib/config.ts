@@ -68,6 +68,13 @@ export const config = {
         passkey: getEnv('MPESA_PASSKEY', ''),
         callbackUrl: getEnv('MPESA_CALLBACK_URL', ''),
         webhookKey: getEnv('MPESA_WEBHOOK_KEY', ''),
+        // Default BuyGoods API credentials (for tenants without own Daraja app)
+        // Note: Till Number and Store Number are tenant-specific and should not be defaulted
+        buyGoods: {
+            consumerKey: getEnv('MPESA_BUYGOODS_CONSUMER_KEY', ''),
+            consumerSecret: getEnv('MPESA_BUYGOODS_CONSUMER_SECRET', ''),
+            passkey: getEnv('MPESA_BUYGOODS_PASSKEY', ''),
+        },
     },
 
     // SMS

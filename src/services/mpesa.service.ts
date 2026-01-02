@@ -68,7 +68,7 @@ export function validateBuyGoodsConfig(config: MpesaConfig): BuyGoodsValidationR
     // BuyGoods-specific validations
     if (config.subType === 'BUYGOODS') {
         if (!config.shortcode) errors.push('Till Number (shortcode) is required for BuyGoods');
-        if (!config.storeNumber) errors.push('Store Number (Head Office) is required for BuyGoods STK Push');
+        // Store number is optional - will fallback to till number if not provided
     } else if (config.subType === 'PAYBILL') {
         if (!config.shortcode) errors.push('Paybill Number (shortcode) is required');
     } else if (config.subType === 'BANK') {
@@ -93,6 +93,8 @@ const tokenCache: Map<string, { token: string; expiresAt: number }> = new Map();
 
 /**
  * Get M-Pesa config for a tenant
+ * Falls back to default BuyGoods credentials (consumer key, secret, passkey) if tenant hasn't set their own
+ * NOTE: Till Number (shortcode) must be tenant-specific. Store Number is optional (will use till number if not provided)
  */
 export async function getTenantMpesaConfig(tenantId: string, purpose?: 'HOTSPOT' | 'PPPOE'): Promise<MpesaConfig | null> {
     const tenant = await prisma.tenant.findUnique({
@@ -118,7 +120,38 @@ export async function getTenantMpesaConfig(tenantId: string, purpose?: 'HOTSPOT'
         });
     }
 
-    if (!gateway || !gateway.consumerKey || !gateway.consumerSecret || !gateway.shortcode) {
+    if (!gateway || !gateway.shortcode) {
+        return null;
+    }
+
+    // For BuyGoods: Use system defaults for API credentials if tenant hasn't configured their own
+    // Till number (shortcode) must always be tenant-specific
+    // Store number is optional - will fallback to till number if not provided
+    const isBuyGoods = gateway.subType === 'BUYGOODS';
+    const useDefaultCredentials = isBuyGoods && (
+        !gateway.consumerKey || 
+        !gateway.consumerSecret || 
+        !gateway.passkey
+    );
+
+    if (useDefaultCredentials) {
+        logger.info({ tenantId, gatewayId: gateway.id }, 'Using default BuyGoods API credentials for tenant');
+        
+        return {
+            subType: 'BUYGOODS',
+            consumerKey: gateway.consumerKey || config.mpesa.buyGoods.consumerKey,
+            consumerSecret: gateway.consumerSecret || config.mpesa.buyGoods.consumerSecret,
+            shortcode: gateway.shortcode, // Tenant's till number (never defaulted)
+            storeNumber: gateway.storeNumber || undefined, // Optional - undefined if not provided, fallback to till number during STK Push
+            accountNumber: gateway.accountNumber || undefined,
+            passkey: gateway.passkey || config.mpesa.buyGoods.passkey,
+            callbackUrl: (tenant as any)?.mpesaCallbackUrl || config.mpesa.callbackUrl || '',
+            env: (gateway.env as 'sandbox' | 'production') || config.mpesa.env,
+        };
+    }
+
+    // For non-BuyGoods or fully configured BuyGoods, use gateway config as-is
+    if (!gateway.consumerKey || !gateway.consumerSecret) {
         return null;
     }
 
@@ -302,8 +335,8 @@ export async function initiateSTKPush(
     let finalAccountRef = accountReference;
 
     if (config.subType === 'BUYGOODS') {
-        // Buy Goods: BusinessShortCode is Store Number, PartyB is Till Number
-        businessShortCode = config.storeNumber || config.shortcode; // Fallback if store number missing
+        // BuyGoods: BusinessShortCode uses store number if provided, otherwise defaults to till number; PartyB is till number
+        businessShortCode = config.storeNumber || config.shortcode;
         partyB = config.shortcode;
         transactionType = 'CustomerBuyGoodsOnline';
     } else if (config.subType === 'BANK') {
