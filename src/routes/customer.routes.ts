@@ -148,7 +148,7 @@ customerRoutes.get('/:id', async (c) => {
             ...customer.package,
             price: Number(customer.package.price),
             sessionTime: customer.package.sessionTime ? Number(customer.package.sessionTime) : null,
-            bytesQuota: customer.package.bytesQuota ? Number(customer.package.bytesQuota) : null,
+            dataLimit: customer.package.dataLimit ? Number(customer.package.dataLimit) : null,
         } : null,
         router: customer.nas,
         createdAt: customer.createdAt,
