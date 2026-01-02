@@ -39,7 +39,12 @@ export type AuditAction =
     | 'VPN_PEER_CREATE'
     | 'VPN_PEER_DELETE'
     | 'VPN_PEER_ENABLE'
-    | 'VPN_PEER_DISABLE';
+    | 'VPN_PEER_DISABLE'
+    | 'TICKET_CREATE'
+    | 'TICKET_UPDATE'
+    | 'TICKET_ASSIGN'
+    | 'TICKET_RESOLVE'
+    | 'TICKET_DELETE';
 
 export interface AuditLogParams {
     action: AuditAction;
