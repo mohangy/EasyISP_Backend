@@ -418,8 +418,15 @@ tenantRoutes.post('/sms-config/send-test', requireRole('ADMIN', 'SUPER_ADMIN'), 
 // GET /api/tenant/sms-balance - Get SMS balance
 tenantRoutes.get('/sms-balance', async (c) => {
     const tenantId = c.get('tenantId');
+
+    // Get gateway config to include provider name
+    const gw = await smsService.getGatewayConfig(tenantId);
     const result = await smsService.getBalance(tenantId);
-    return c.json(result);
+
+    return c.json({
+        ...result,
+        provider: gw?.provider || null,
+    });
 });
 
 // PUT /api/tenant/payment-gateway - Update Payment Gateway Configuration
