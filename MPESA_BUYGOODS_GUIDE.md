@@ -9,29 +9,29 @@ The EasyISP Backend now supports M-Pesa BuyGoods (Till Numbers) in addition to P
 BuyGoods is M-Pesa's merchant payment service that uses a **Till Number** instead of a PayBill number. Key differences:
 
 - **PayBill**: Uses a business shortcode (paybill number)
-- **BuyGoods**: Uses a Till Number for the merchant, plus a Store Number (Head Office) for API operations
+- **BuyGoods**: Uses a Till Number for the merchant. A Store Number (Head Office) is optional and will default to the till number if not provided
 - **Bank**: Uses a bank paybill with a target account number
 
 ## Configuration Requirements
 
 ### For BuyGoods Till Number Configuration:
 
-1. **Till Number** (shortcode): Your BuyGoods till number
-2. **Store Number**: Your BuyGoods Head Office/Store number (required for STK Push)
-3. **Consumer Key**: Daraja API consumer key
-4. **Consumer Secret**: Daraja API consumer secret
-5. **Passkey**: Lipa Na M-Pesa Online passkey
+1. **Till Number** (shortcode): Your BuyGoods till number (required)
+2. **Store Number**: Your BuyGoods Head Office/Store number (optional - defaults to till number if not provided)
+3. **Consumer Key**: Daraja API consumer key (optional - can use system defaults)
+4. **Consumer Secret**: Daraja API consumer secret (optional - can use system defaults)
+5. **Passkey**: Lipa Na M-Pesa Online passkey (optional - can use system defaults)
 6. **Environment**: `sandbox` or `production`
 
 ## Default Configuration (System-wide)
 
 The system administrator can configure default BuyGoods **API credentials** that will be used when tenants don't provide their own. This is configured via environment variables:
 
-**Important Note:** Only the API credentials (Consumer Key, Consumer Secret, Passkey) can use defaults. The Till Number and Store Number are **tenant-specific** and must always be provided by each tenant.
+**Important Note:** Only the API credentials (Consumer Key, Consumer Secret, Passkey) can use defaults. The Till Number is **tenant-specific** and must always be provided. The Store Number is optional and will default to the till number if not provided.
 
 ```bash
 # Add to your .env file
-# These are ONLY for API credentials, NOT for till/store numbers
+# These are ONLY for API credentials
 MPESA_BUYGOODS_CONSUMER_KEY=your-buygoods-consumer-key
 MPESA_BUYGOODS_CONSUMER_SECRET=your-buygoods-consumer-secret
 MPESA_BUYGOODS_PASSKEY=your-buygoods-passkey
@@ -41,13 +41,16 @@ MPESA_BUYGOODS_PASSKEY=your-buygoods-passkey
 
 1. When a tenant creates a BuyGoods gateway, they **must** provide:
    - Their Till Number (shortcode)
-   - Their Store Number (Head Office number)
 
-2. If they don't provide API credentials (Consumer Key, Secret, Passkey):
+2. Optionally, they can provide:
+   - Store Number (will use till number if not provided)
+   - API credentials (Consumer Key, Secret, Passkey)
+
+3. If they don't provide API credentials:
    - The system automatically uses default credentials from environment variables
    - This allows tenants to use the system's API app without their own Daraja app
 
-3. Tenants can still provide their own API credentials to override defaults
+4. Tenants can provide their own API credentials to override defaults
 
 ## Setting Up BuyGoods Gateway
 
@@ -64,8 +67,8 @@ Authorization: Bearer <token>
   "type": "MPESA_API",
   "subType": "BUYGOODS",
   "name": "My Till Number",
-  "shortcode": "123456",           # Your Till Number
-  "storeNumber": "654321",         # Your Store/Head Office Number
+  "shortcode": "123456",           # Your Till Number (required)
+  "storeNumber": "654321",         # Your Store/Head Office Number (optional)
   "consumerKey": "your-key",       # Optional if using defaults
   "consumerSecret": "your-secret", # Optional if using defaults
   "passkey": "your-passkey",       # Optional if using defaults
@@ -77,7 +80,7 @@ Authorization: Bearer <token>
 
 **Using Default API Credentials (Minimal Setup):**
 
-If your system administrator has configured default API credentials, tenants can set up their gateway with just their till and store numbers:
+If your system administrator has configured default API credentials, tenants can set up their gateway with just their till number:
 
 ```bash
 POST /api/payment-gateways
@@ -89,13 +92,12 @@ Authorization: Bearer <token>
   "subType": "BUYGOODS",
   "name": "My Till Number",
   "shortcode": "123456",      # Your Till Number (required, tenant-specific)
-  "storeNumber": "654321",    # Your Store/Head Office Number (required, tenant-specific)
   "env": "production",
   "forHotspot": true
 }
 ```
 
-In this case, the system will use default API credentials (Consumer Key, Secret, Passkey) from environment variables.
+Note: If `storeNumber` is not provided, the system will use the `shortcode` (till number) for both BusinessShortCode and PartyB in the STK Push request.
 
 ## How BuyGoods STK Push Works
 
@@ -113,10 +115,10 @@ This differs from PayBill where both BusinessShortCode and PartyB use the same p
 The system validates BuyGoods configuration to ensure:
 
 - Till Number (shortcode) is provided
-- Store Number is provided (required for STK Push)
 - Consumer Key and Consumer Secret are provided (or available from defaults)
 - Passkey is provided (or available from defaults)
 - Callback URL is configured
+- Store Number is optional (will use till number if not provided)
 
 ### Testing Your Configuration
 
@@ -134,10 +136,6 @@ This will attempt to get an OAuth token from M-Pesa to verify credentials.
 If you have existing M-Pesa configuration in the Tenant model, it will be automatically migrated to the PaymentGateway model on first access.
 
 ## Troubleshooting
-
-### "Store Number is required for BuyGoods STK Push"
-
-**Solution**: Add the `storeNumber` field to your gateway configuration. This is your BuyGoods Head Office number.
 
 ### "Consumer Key/Secret/Passkey is required"
 

@@ -18,7 +18,9 @@ The M-Pesa integration had issues with BuyGoods (Till Number) configuration:
 
 **What CANNOT Be Defaulted (Tenant-Specific):**
 - Till Number (shortcode)
-- Store Number (Head Office)
+
+**What Is Optional:**
+- Store Number (Head Office) - will use till number if not provided
 
 ### 2. Configuration Changes
 
@@ -46,8 +48,8 @@ MPESA_BUYGOODS_PASSKEY=your-buygoods-passkey
 1. Check if tenant has a BuyGoods gateway
 2. If missing API credentials (consumer key/secret/passkey)
 3. Use system defaults for those credentials
-4. Always require tenant to provide till and store numbers
-5. Return null if store number is missing for BuyGoods
+4. Always require tenant to provide till number
+5. Store number is optional - will fallback to till number if not provided
 
 ### 4. API Route Updates
 
@@ -103,7 +105,8 @@ This differs from PayBill where both use the same shortcode.
 ✅ **Code Review:** All critical issues addressed
 ✅ **Best Practices:**
 - API credentials can be shared (connects to Daraja API)
-- Till/store numbers never shared (tenant-specific identifiers)
+- Till number must be tenant-specific (unique identifier)
+- Store number is optional (defaults to till number if not provided)
 - Proper validation prevents misconfiguration
 - Environment variables for sensitive data
 
@@ -131,25 +134,36 @@ This differs from PayBill where both use the same shortcode.
 
 ### For Tenants
 
-**Option 1: Use System Defaults (Minimal Setup)**
+**Option 1: Minimal Setup (Store number optional)**
 ```json
 POST /api/payment-gateways
 {
   "subType": "BUYGOODS",
-  "shortcode": "123456",     // Your till number
-  "storeNumber": "654321",   // Your store number
+  "shortcode": "123456",     // Your till number (required)
   "env": "production",
   "forHotspot": true
 }
 ```
 
-**Option 2: Provide Own Credentials**
+**Option 2: With Store Number**
+```json
+POST /api/payment-gateways
+{
+  "subType": "BUYGOODS",
+  "shortcode": "123456",     // Your till number
+  "storeNumber": "654321",   // Your store number (optional)
+  "env": "production",
+  "forHotspot": true
+}
+```
+
+**Option 3: Provide Own Credentials**
 ```json
 POST /api/payment-gateways
 {
   "subType": "BUYGOODS",
   "shortcode": "123456",
-  "storeNumber": "654321",
+  "storeNumber": "654321",   // Optional
   "consumerKey": "your-key",
   "consumerSecret": "your-secret",
   "passkey": "your-passkey",
@@ -184,9 +198,10 @@ POST /api/payment-gateways
 
 ## Known Limitations
 
-1. **Till/Store Numbers Required:** Tenants must always provide their own till and store numbers
-2. **API App Sharing:** When using default credentials, all tenants share the same Daraja API app
-3. **Callback URLs:** Tenants using defaults must use the system callback URL
+1. **Till Number Required:** Tenants must always provide their own till number
+2. **Store Number Optional:** If not provided, till number is used for BusinessShortCode
+3. **API App Sharing:** When using default credentials, all tenants share the same Daraja API app
+4. **Callback URLs:** Tenants using defaults must use the system callback URL
 
 ## Future Enhancements
 

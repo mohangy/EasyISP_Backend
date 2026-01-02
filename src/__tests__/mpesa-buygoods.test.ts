@@ -41,7 +41,7 @@ function validateBuyGoodsConfig(config: MpesaConfig): BuyGoodsValidationResult {
     // BuyGoods-specific validations
     if (config.subType === 'BUYGOODS') {
         if (!config.shortcode) errors.push('Till Number (shortcode) is required for BuyGoods');
-        if (!config.storeNumber) errors.push('Store Number (Head Office) is required for BuyGoods STK Push');
+        // Store number is optional - will fallback to till number if not provided
     } else if (config.subType === 'PAYBILL') {
         if (!config.shortcode) errors.push('Paybill Number (shortcode) is required');
     } else if (config.subType === 'BANK') {
@@ -85,7 +85,7 @@ describe('M-Pesa BuyGoods Configuration', () => {
             expect(result.details?.environment).toBe('sandbox');
         });
 
-        it('should fail validation when BuyGoods is missing store number', () => {
+        it('should validate BuyGoods without store number (uses till number as fallback)', () => {
             const config = {
                 subType: 'BUYGOODS' as const,
                 consumerKey: 'test-consumer-key',
@@ -98,8 +98,8 @@ describe('M-Pesa BuyGoods Configuration', () => {
 
             const result = validateBuyGoodsConfig(config);
 
-            expect(result.valid).toBe(false);
-            expect(result.errors).toContain('Store Number (Head Office) is required for BuyGoods STK Push');
+            expect(result.valid).toBe(true);
+            expect(result.errors).toHaveLength(0);
             expect(result.configType).toBe('BUYGOODS');
         });
 
