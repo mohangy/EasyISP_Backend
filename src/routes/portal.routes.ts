@@ -532,13 +532,54 @@ portalRoutes.get('/mpesa/status', async (c) => {
         return c.json({ status: 'expired' });
     }
 
-    // Query M-Pesa for status (optional - can be expensive)
+    // Query M-Pesa for status (fallback if callback wasn't received)
     try {
         const mpesaStatus = await querySTKStatus(tenantId, checkoutRequestId);
 
         if (mpesaStatus.ResultCode === '0') {
-            // Payment successful but callback not received yet
-            return c.json({ status: 'pending', message: 'Payment confirmed, processing...' });
+            // Payment successful! Callback may not have been received - complete the payment now
+            logger.info({ checkoutRequestId, mpesaStatus }, 'M-Pesa query shows successful payment - completing via polling');
+
+            // Generate a receipt code from checkoutRequestId if not available
+            // The actual receipt comes from callback, but we can use a generated one as fallback
+            const generatedReceipt = `HP${Date.now().toString(36).toUpperCase()}`;
+
+            try {
+                // Create hotspot customer
+                const result = await createHotspotCustomerFromPayment(
+                    tenantId,
+                    generatedReceipt,
+                    pendingPayment.phone,
+                    pendingPayment.packageId,
+                    pendingPayment.amount
+                );
+
+                // Update pending payment
+                await prisma.pendingHotspotPayment.update({
+                    where: { id: pendingPayment.id },
+                    data: {
+                        status: 'COMPLETED',
+                        transactionCode: generatedReceipt,
+                        customerId: result.customerId,
+                    },
+                });
+
+                logger.info({
+                    checkoutRequestId,
+                    username: result.username,
+                    generatedReceipt
+                }, 'Payment completed via status polling');
+
+                return c.json({
+                    status: 'completed',
+                    username: result.username,
+                    password: result.password,
+                    package: pendingPayment.package.name,
+                });
+            } catch (createError) {
+                logger.error({ createError, checkoutRequestId }, 'Failed to create customer from status poll');
+                return c.json({ status: 'pending', message: 'Payment confirmed, processing...' });
+            }
         } else if (mpesaStatus.ResultCode) {
             // Payment failed
             await prisma.pendingHotspotPayment.update({
