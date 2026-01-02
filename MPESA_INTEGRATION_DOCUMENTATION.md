@@ -469,7 +469,7 @@ MPESA_WEBHOOK_KEY=your_secret_webhook_key
 
 ## Notes
 
-1. The system has both **legacy** M-Pesa configuration (stored in Tenant model) and **new** multi-gateway support (PaymentGateway model)
+1. The system has both **legacy** M-Pesa configuration (stored in Tenant model) and **new** multi-gateway support (PaymentGateway model). The legacy configuration is maintained for backward compatibility but new deployments should use the PaymentGateway model which provides better flexibility with multi-gateway and per-purpose support.
 2. The gateway routes automatically migrate legacy configurations on first access
 3. M-Pesa webhook endpoints always return success to prevent retries
 4. Transaction codes from M-Pesa are used as both username and password for hotspot customers

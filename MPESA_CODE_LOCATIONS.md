@@ -203,7 +203,7 @@ mpesa: {
 
 **Documentation:**
 9. `API_ENDPOINTS.md` - API docs
-10. `MPESA_INTEGRATION_DOCUMENTATION.md` - Full documentation (this repo)
+10. `MPESA_INTEGRATION_DOCUMENTATION.md` - Full documentation (newly added)
 11. `MPESA_CODE_LOCATIONS.md` - This file
 
 ---
