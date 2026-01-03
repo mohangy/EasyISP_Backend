@@ -48,7 +48,9 @@ app.use('/portal-preview/*', serveStatic({ root: './captive-portal', rewriteRequ
 app.use('*', secureHeaders());
 app.use('*', requestLogger()); // Comprehensive request logging
 app.use('*', cors({
-    origin: config.corsOrigins,
+    // Allow any origin for captive portal compatibility
+    // Captive portals are served from router IPs (e.g., 10.5.50.1) which can't be predefined
+    origin: '*',
     credentials: true,
     allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
