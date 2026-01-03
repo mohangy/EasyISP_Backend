@@ -10,12 +10,16 @@
  */
 
 // ============ Configuration ============
-// Auto-detect API URL from current page origin, or use query param override
+// IMPORTANT: When running on the router, window.location.origin is the router IP (e.g., 10.5.50.1)
+// We need to point to the actual EasyISP backend server
 const urlParams = new URLSearchParams(window.location.search);
-const detectedApiUrl = window.location.origin + '/api';
+
+// Backend API URL - MUST be the EasyISP server, not the router
+const EASYISP_SERVER = 'https://113-30-190-52.cloud-xip.com';
+const detectedApiUrl = EASYISP_SERVER + '/api';
 
 const CONFIG = {
-    // API base URL - auto-detected from origin, or override via ?apiUrl= query param
+    // API base URL - can be overridden via ?apiUrl= query param
     apiBaseUrl: urlParams.get('apiUrl') || detectedApiUrl,
 
     // Tenant ID - can be passed via query param or detected from NAS
