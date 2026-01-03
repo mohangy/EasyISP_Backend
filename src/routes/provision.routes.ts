@@ -121,6 +121,7 @@ provisionRoutes.get('/:token', async (c) => {
     // Get WireGuard server config
     const wgPublicKey = process.env['WG_PUBLIC_KEY'] ?? 'VCnoAMcYMtfDGcBKHatyKjuA8ZBP7onHrWG8kQcXxkY=';
     const wgEndpoint = process.env['WG_ENDPOINT'] ?? '113.30.190.52:51820';
+    const wgInterface = process.env['WG_INTERFACE'] ?? 'wg0';
 
     // Generate API credentials for this router
     const apiUsername = 'easyisp-api';
@@ -142,7 +143,7 @@ provisionRoutes.get('/:token', async (c) => {
             // Add peer to server interface
             // IMPORTANT: This requires sudo permissions or running as root
             try {
-                execSync(`sudo wg set wg0 peer ${vpnPublicKey} allowed-ips ${vpnIp}/32`);
+                execSync(`sudo wg set ${wgInterface} peer ${vpnPublicKey} allowed-ips ${vpnIp}/32`);
                 logger.info({ routerId: nas.id, vpnIp }, 'Added WireGuard peer to server');
             } catch (wgError) {
                 logger.error({ error: wgError }, 'Failed to add WireGuard peer on server (check permissions)');
