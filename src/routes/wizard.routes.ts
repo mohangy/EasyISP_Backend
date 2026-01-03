@@ -187,14 +187,17 @@ wizardRoutes.get('/:routerId/verify', async (c) => {
         throw new AppError(404, 'Router not found');
     }
 
-    // Check if router has valid IP (not 0.0.0.0)
-    if (!nas.ipAddress || nas.ipAddress === '0.0.0.0') {
+    // Check if router has valid IP (either Public or VPN)
+    const hasValidIp = (nas.ipAddress && nas.ipAddress !== '0.0.0.0') || nas.vpnIp;
+
+    if (!hasValidIp) {
         return c.json({
             online: false,
             apiReachable: false,
-            message: 'Router IP not detected. The provision-complete callback may have failed. Please ensure the router has internet access and can reach this server.',
+            message: 'Router connection not detected. Please ensure the router has run the provision script.',
             debug: {
                 routerIp: nas.ipAddress,
+                vpnIp: nas.vpnIp,
                 hasApiCredentials: !!(nas.apiUsername && nas.apiPassword),
             }
         });
