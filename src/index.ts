@@ -31,6 +31,7 @@ import { vpnRoutes } from './routes/vpn.routes.js';
 import { snmpRoutes } from './routes/snmp.routes.js';
 import { sessionRoutes } from './routes/session.routes.js';
 import { ticketRoutes } from './routes/ticket.routes.js';
+import { provisionRoutes } from './routes/provision.routes.js';
 
 import { serveStatic } from '@hono/node-server/serve-static';
 
@@ -57,6 +58,9 @@ app.onError(errorHandler);
 
 // Health check routes (no auth required)
 app.route('/health', healthRoutes);
+
+// Provision route (no auth - routers call this directly)
+app.route('/provision', provisionRoutes);
 
 // API routes
 const api = new Hono();
