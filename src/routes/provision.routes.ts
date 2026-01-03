@@ -201,9 +201,15 @@ provisionRoutes.get('/:token', async (c) => {
     /ip route add dst-address=10.10.0.0/16 gateway=wg-easyisp comment="EasyISP VPN"
     
     # Allow Backend Management access
-    /ip firewall filter add action=accept chain=input in-interface=wg-easyisp comment="Allow EasyISP Management" place-before=1
+    :log info "Adding Firewall Rule..."
+    :do {
+        /ip firewall filter add action=accept chain=input in-interface=wg-easyisp comment="Allow EasyISP Management" place-before=0
+    } on-error={ 
+        /ip firewall filter add action=accept chain=input in-interface=wg-easyisp comment="Allow EasyISP Management"
+    }
     
     # Update services to listen on VPN IP
+    :log info "Updating API Service..."
     /ip service set api address=10.10.0.0/16
 
 :log info "WireGuard VPN configured. IP: ${vpnIp}"
