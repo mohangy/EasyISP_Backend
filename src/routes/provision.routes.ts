@@ -183,34 +183,36 @@ provisionRoutes.get('/:token', async (c) => {
 # Check if interface exists
 :if ([:len [/interface wireguard find name=wg-easyisp]] = 0) do={
     /interface wireguard add name=wg-easyisp mtu=1420 listen-port=51821 private-key="${vpnPrivateKey}"
+    :delay 1s
 }
 
 # Add peer (Server)
-/interface wireguard peers remove [find interface=wg-easyisp]
+:do { /interface wireguard peers remove [find interface=wg-easyisp] } on-error={}
 /interface wireguard peers add interface=wg-easyisp \\
     public-key="${wgPublicKey}" \\
     endpoint-address=${wgEndpoint.split(':')[0]} endpoint-port=${wgEndpoint.split(':')[1]} \\
     allowed-address=10.10.0.0/16 persistent-keepalive=25s
 
 # Add IP address
-/ip address remove [find interface=wg-easyisp]
+:do { /ip address remove [find interface=wg-easyisp] } on-error={}
 /ip address add address=${vpnIp}/32 interface=wg-easyisp network=10.10.0.0
 
 # Add Route to VPN subnet
-/ip route remove [find gateway=wg-easyisp]
-/ip route add dst-address=10.10.0.0/16 gateway=wg-easyisp comment="EasyISP VPN"
+:do { /ip route remove [find gateway=wg-easyisp] } on-error={}
+:log info "Adding VPN Route..."
+:do {
+    /ip route add dst-address=10.10.0.0/16 gateway=wg-easyisp comment="EasyISP VPN"
+} on-error={}
 
 # Allow Backend Management access
 :log info "Adding Firewall Rule..."
 :do {
-    /ip firewall filter add action=accept chain=input in-interface=wg-easyisp comment="Allow EasyISP Management" place-before=0
-} on-error={ 
     /ip firewall filter add action=accept chain=input in-interface=wg-easyisp comment="Allow EasyISP Management"
-}
+} on-error={}
 
 # Update services to listen on VPN IP
 :log info "Updating API Service..."
-/ip service set api address=10.10.0.0/16
+:do { /ip service set api address=10.10.0.0/16 } on-error={}
 
 :log info "WireGuard VPN configured. IP: ${vpnIp}"
 
