@@ -1,4 +1,6 @@
 import { execSync } from 'node:child_process';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { Hono } from 'hono';
 import { prisma } from '../lib/prisma.js';
 import { logger } from '../lib/logger.js';
@@ -6,58 +8,41 @@ import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
 
 export const provisionRoutes = new Hono();
 
-// GET /provision/hotspot/login.html - Serve redirect login page
-// Accepts ?tenantId=xxx query param to generate tenant-specific portal URL
-provisionRoutes.get('/hotspot/login.html', (c) => {
-    const tenantId = c.req.query('tenantId') ?? '';
-    const apiBaseUrl = process.env['API_BASE_URL'] ?? 'https://113-30-190-52.cloud-xip.com';
+// Serve static captive portal files from captive-portal directory
+// These will be fetched by the router
+const CAPTIVE_PORTAL_FILES = ['login.html', 'error.html', 'status.html', 'styles.css', 'script.js'];
+const CAPTIVE_PORTAL_DIR = path.resolve(process.cwd(), 'captive-portal');
 
-    // Build the portal URL with tenantId
-    const portalUrl = `${apiBaseUrl}/portal-preview/login.html?tenantId=${tenantId}`;
+// GET /provision/hotspot/:filename - Serve captive portal static files
+provisionRoutes.get('/hotspot/:filename', async (c) => {
+    const filename = c.req.param('filename');
 
-    // MikroTik variables are $(var)
-    const html = `<!DOCTYPE html>
-<html>
-<head>
-    <title>Redirecting...</title>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="pragma" content="no-cache">
-    <meta http-equiv="expires" content="-1">
-    <style>body { font-family: sans-serif; text-align: center; padding: 20px; background: #1a1a2e; color: #fff; }</style>
-</head>
-<body>
-    <h3>Please wait...</h3>
-    <p>Redirecting to secure login portal...</p>
-    
-    <form name="redirect" action="${portalUrl}" method="get">
-        <input type="hidden" name="tenantId" value="${tenantId}">
-        <input type="hidden" name="mac" value="$(mac)">
-        <input type="hidden" name="ip" value="$(ip)">
-        <input type="hidden" name="username" value="$(username)">
-        <input type="hidden" name="link-login" value="$(link-login)">
-        <input type="hidden" name="link-orig" value="$(link-orig)">
-        <input type="hidden" name="error" value="$(error)">
-        <input type="hidden" name="chap-id" value="$(chap-id)">
-        <input type="hidden" name="chap-challenge" value="$(chap-challenge)">
-        <input type="hidden" name="link-login-only" value="$(link-login-only)">
-        <input type="hidden" name="link-orig-esc" value="$(link-orig-esc)">
-        <input type="hidden" name="mac-esc" value="$(mac-esc)">
-        <noscript>
-            <input type="submit" value="Click here to login">
-        </noscript>
-    </form>
+    // Only serve allowed files
+    if (!CAPTIVE_PORTAL_FILES.includes(filename)) {
+        return c.text('File not found', 404);
+    }
 
-    <script>
-        // Auto-submit form
-        window.onload = function() {
-            document.redirect.submit();
-        }
-    </script>
-</body>
-</html>`;
-    return c.html(html);
+    const filePath = path.join(CAPTIVE_PORTAL_DIR, filename);
+
+    try {
+        const content = fs.readFileSync(filePath, 'utf-8');
+
+        // Set appropriate content type
+        let contentType = 'text/html';
+        if (filename.endsWith('.css')) contentType = 'text/css';
+        if (filename.endsWith('.js')) contentType = 'application/javascript';
+
+        c.header('Content-Type', contentType);
+        c.header('Cache-Control', 'no-cache');
+
+        return c.body(content);
+    } catch (error) {
+        logger.error({ error, filename }, 'Failed to serve captive portal file');
+        return c.text('File not found', 404);
+    }
 });
+
+// Note: The above route handles all captive portal files including login.html
 
 // Encryption key - should be in env in production
 const PROVISION_SECRET = process.env['PROVISION_SECRET'] ?? 'easyisp-provision-secret-key-32b';

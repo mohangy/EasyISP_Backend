@@ -739,9 +739,19 @@ export class MikroTikService {
                     '=radius-interim-update=5m',
                     '=login-by=http-chap,mac-cookie',
                     '=nas-port-type=ethernet',
+                    '=html-directory=hotspot',
                     `=dns-name=hotspot.local`
                 ]);
-            } catch { /* Profile may already exist */ }
+            } catch {
+                // Profile may already exist - update it
+                try {
+                    await api.write('/ip/hotspot/profile/set', [
+                        `=numbers=${profileName}`,
+                        '=html-directory=hotspot',
+                        '=use-radius=yes'
+                    ]);
+                } catch { /* Ignore update errors */ }
+            }
 
             // 7. Create hotspot server
             try {
@@ -769,24 +779,28 @@ export class MikroTikService {
                 } catch { /* Entry may already exist */ }
             }
 
-            // 9. Download Captive Portal Files (login.html)
+            // 9. Download Captive Portal Files (all required files)
             try {
                 // Determine API Base URL (Should match provision script URL)
                 const apiBaseUrl = process.env['API_BASE_URL'] ?? 'https://113-30-190-52.cloud-xip.com';
-                const tenantId = nas.tenantId ?? '';
 
-                // Ensure hotspot directory exists (RouterOS usually creates it by default, but we can try creating clean one)
-                // We use default 'hotspot' folder.
+                // List of all captive portal files to download
+                const captivePortalFiles = ['login.html', 'error.html', 'status.html', 'styles.css', 'script.js'];
 
-                await api.write('/tool/fetch', [
-                    `=url=${apiBaseUrl}/provision/hotspot/login.html?tenantId=${tenantId}`,
-                    '=dst-path=hotspot/login.html',
-                    '=mode=https',
-                    '=check-certificate=no'
-                ]);
-
-                // Also fetch alogin.html (auto-login redirect/status) - use same template for now or generic
-                // Or just login.html is enough for redirect.
+                // Download each file
+                for (const file of captivePortalFiles) {
+                    try {
+                        await api.write('/tool/fetch', [
+                            `=url=${apiBaseUrl}/provision/hotspot/${file}`,
+                            `=dst-path=hotspot/${file}`,
+                            '=mode=https',
+                            '=check-certificate=no'
+                        ]);
+                        logger.info({ nasId: nas.id, file }, 'Downloaded captive portal file');
+                    } catch (fileError) {
+                        logger.warn({ nasId: nas.id, file, error: fileError }, 'Failed to download captive portal file');
+                    }
+                }
 
                 logger.info({ nasId: nas.id }, 'Captive portal files downloaded');
             } catch (error) {
