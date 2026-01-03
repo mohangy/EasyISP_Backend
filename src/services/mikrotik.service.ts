@@ -645,8 +645,26 @@ export class MikroTikService {
         const profileName = 'easyisp-hotspot';
 
         try {
-            // 1. Create bridge if multiple interfaces
+            // 1. Prepare interfaces (Enable & Remove from existing bridges)
             let hotspotInterface = config.interfaces[0];
+
+            // If multiple interfaces, we create a bridge. If single, we configure directly.
+            // In both cases, we must ensure physical interfaces are clean (not slaves).
+            for (const ifaceName of config.interfaces) {
+                // Enable interface
+                try {
+                    await api.write('/interface/enable', [`=numbers=${ifaceName}`]);
+                } catch { /* Ignore if already enabled */ }
+
+                // Check if in bridge and remove
+                try {
+                    const ports = await api.write('/interface/bridge/port/print', [`?interface=${ifaceName}`]);
+                    for (const port of ports) {
+                        await api.write('/interface/bridge/port/remove', [`=.id=${port['.id']}`]);
+                    }
+                } catch { /* Ignore checks */ }
+            }
+
             if (config.interfaces.length > 1) {
                 const bridgeName = config.bridgeName || 'bridge-hotspot';
 
@@ -665,6 +683,9 @@ export class MikroTikService {
                     } catch { /* Port may already be added */ }
                 }
                 hotspotInterface = bridgeName;
+            } else {
+                // Single interface mode - ensure it's not a slave
+                // (Already removed from bridge above)
             }
 
             // 2. Create IP pool
