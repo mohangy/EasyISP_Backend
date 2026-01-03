@@ -67,7 +67,7 @@ wizardRoutes.post('/start', async (c) => {
 
     // Build provision command
     const baseUrl = process.env['API_BASE_URL'] ?? 'https://113-30-190-52.cloud-xip.com';
-    const provisionCommand = `/ip dns set servers=8.8.8.8,1.1.1.1; /ip service enable api,ftp; /system ntp client set enabled=yes primary-ntp=162.159.200.123; :delay 5s; /tool fetch mode=https url="${baseUrl}/provision/${token}" dst-path=easyisp.rsc; :delay 2s; /import easyisp.rsc;`;
+    const provisionCommand = `/ip dns set servers=8.8.8.8,1.1.1.1; /ip service enable api,ftp; /system ntp client set enabled=yes servers=162.159.200.123; :delay 5s; /tool fetch mode=https url="${baseUrl}/provision/${token}" dst-path=easyisp.rsc; :delay 2s; /import easyisp.rsc;`;
 
     logger.info({ routerId: nas.id, routerName: nas.name }, 'Router provisioning started');
 
