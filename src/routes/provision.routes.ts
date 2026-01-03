@@ -81,6 +81,20 @@ provisionRoutes.get('/:token', async (c) => {
     const acctPort = process.env['RADIUS_ACCT_PORT'] ?? '1813';
     const apiBaseUrl = process.env['API_BASE_URL'] ?? 'https://113-30-190-52.cloud-xip.com';
 
+    // Generate API credentials for this router
+    const apiUsername = 'easyisp-api';
+    const apiPassword = randomBytes(16).toString('hex');
+
+    // Update the NAS record with API credentials
+    await prisma.nAS.update({
+        where: { id: nas.id },
+        data: {
+            apiUsername,
+            apiPassword,
+            apiPort: 8728,
+        },
+    });
+
     // Generate complete RouterOS configuration script
     const script = `# ===========================================
 # EasyISP Auto-Configuration Script
@@ -90,6 +104,24 @@ provisionRoutes.get('/:token', async (c) => {
 
 :log info "Starting EasyISP configuration..."
 
+# ===== DNS CONFIGURATION =====
+/ip dns set servers=8.8.8.8,1.1.1.1 allow-remote-requests=yes
+
+# ===== API SERVICE CONFIGURATION =====
+# Enable API service for remote management
+/ip service set api disabled=no port=8728
+
+# Remove existing EasyISP API user if exists
+:do {
+    /user remove [find name="${apiUsername}"]
+} on-error={}
+
+# Create API user for EasyISP management
+/user add name="${apiUsername}" password="${apiPassword}" group=full comment="EasyISP Management API"
+
+:log info "API service configured"
+
+# ===== RADIUS CONFIGURATION =====
 # Remove existing RADIUS configuration
 /radius remove [find]
 
@@ -106,19 +138,23 @@ provisionRoutes.get('/:token', async (c) => {
 # Configure CoA (Change of Authorization) for remote disconnect
 /radius incoming set accept=yes port=${nas.coaPort}
 
-# Configure Hotspot profile to use RADIUS
+:log info "RADIUS configured"
+
+# ===== HOTSPOT PROFILE (DEFAULT) =====
+# Configure default hotspot profile to use RADIUS
 :do {
     /ip hotspot profile set [find default=yes] \\
         use-radius=yes radius-interim-update=5m \\
         login-by=http-chap,mac-cookie \\
         nas-port-type=ethernet
 } on-error={
-    :log warning "Could not configure hotspot profile - hotspot may not be set up"
+    :log warning "Could not configure hotspot profile - hotspot may not be set up yet"
 }
 
-# Set system identity
+# ===== SYSTEM IDENTITY =====
 /system identity set name="${nas.name}"
 
+# ===== NOTIFY SERVER =====
 # Mark configuration complete by calling back to server
 :do {
     /tool fetch mode=https url="${apiBaseUrl}/api/wizard/${nas.id}/provision-complete" keep-result=no
@@ -126,16 +162,20 @@ provisionRoutes.get('/:token', async (c) => {
     :log warning "Could not notify server of completion"
 }
 
+:log info "==========================================="
 :log info "EasyISP configuration completed successfully!"
 :log info "RADIUS Server: ${radiusServer}"
-:log info "RADIUS Secret: ${data.secret}"
+:log info "API User: ${apiUsername}"
+:log info "==========================================="
+:log info "Next: Open the EasyISP wizard and click"
+:log info "'Check Router Online' to continue setup."
 `;
 
     // Return as plain text script
     c.header('Content-Type', 'text/plain; charset=utf-8');
     c.header('Content-Disposition', `attachment; filename="${nas.name}-config.rsc"`);
 
-    logger.info({ routerId: nas.id, routerName: nas.name }, 'Provision script downloaded');
+    logger.info({ routerId: nas.id, routerName: nas.name }, 'Provision script downloaded with API credentials');
 
     return c.text(script);
 });

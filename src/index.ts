@@ -30,7 +30,8 @@ import { portalRoutes } from './routes/portal.routes.js';
 import { vpnRoutes } from './routes/vpn.routes.js';
 import { snmpRoutes } from './routes/snmp.routes.js';
 import { sessionRoutes } from './routes/session.routes.js';
-import { ticketRoutes } from './routes/ticket.routes.js';
+// Temporarily disabled - Ticket model not in Prisma schema
+// import { ticketRoutes } from './routes/ticket.routes.js';
 import { provisionRoutes } from './routes/provision.routes.js';
 
 import { serveStatic } from '@hono/node-server/serve-static';
@@ -86,7 +87,7 @@ api.route('/portal', portalRoutes);
 api.route('/vpn', vpnRoutes);
 api.route('/snmp', snmpRoutes);
 api.route('/sessions', sessionRoutes);
-api.route('/tickets', ticketRoutes);
+// api.route('/tickets', ticketRoutes); // Temporarily disabled - Ticket model not in Prisma schema
 
 // Mount API routes
 app.route('/api', api);

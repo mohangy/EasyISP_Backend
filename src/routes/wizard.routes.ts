@@ -167,3 +167,261 @@ wizardRoutes.get('/:routerId/script', async (c) => {
         provisionCommand,
     });
 });
+
+// ==========================================
+// ENHANCED WIZARD ENDPOINTS
+// ==========================================
+
+import { mikrotikService, type SystemResources, type RouterInterface, type HotspotConfig, type PPPoEConfig } from '../services/mikrotik.service.js';
+
+// GET /api/wizard/:routerId/verify - Verify router is online and API reachable
+wizardRoutes.get('/:routerId/verify', async (c) => {
+    const tenantId = c.get('tenantId');
+    const routerId = c.req.param('routerId');
+
+    const nas = await prisma.nAS.findFirst({
+        where: { id: routerId, tenantId },
+    });
+
+    if (!nas) {
+        throw new AppError(404, 'Router not found');
+    }
+
+    // Check if router has API credentials
+    if (!nas.apiUsername || !nas.apiPassword) {
+        return c.json({
+            online: false,
+            apiReachable: false,
+            message: 'Router API credentials not configured. Please run the provision script first.',
+        });
+    }
+
+    try {
+        // Try to get system resources - this tests the connection
+        await mikrotikService.getSystemResources(nas);
+
+        // Update router status
+        await prisma.nAS.update({
+            where: { id: routerId },
+            data: { status: 'ONLINE', lastSeen: new Date() },
+        });
+
+        return c.json({
+            online: true,
+            apiReachable: true,
+            message: 'Router is online and API is reachable!',
+        });
+    } catch (error) {
+        logger.warn({ routerId, error }, 'Router verification failed');
+        return c.json({
+            online: false,
+            apiReachable: false,
+            message: `Cannot reach router API: ${(error as Error).message}`,
+        });
+    }
+});
+
+// GET /api/wizard/:routerId/system-info - Get router system resources
+wizardRoutes.get('/:routerId/system-info', async (c) => {
+    const tenantId = c.get('tenantId');
+    const routerId = c.req.param('routerId');
+
+    const nas = await prisma.nAS.findFirst({
+        where: { id: routerId, tenantId },
+    });
+
+    if (!nas) {
+        throw new AppError(404, 'Router not found');
+    }
+
+    if (!nas.apiUsername || !nas.apiPassword) {
+        throw new AppError(400, 'Router API credentials not configured');
+    }
+
+    try {
+        const resources = await mikrotikService.getSystemResources(nas);
+
+        // Update router info in database
+        await prisma.nAS.update({
+            where: { id: routerId },
+            data: {
+                boardName: resources.boardName,
+                routerOsVersion: resources.version,
+                cpuLoad: resources.cpuLoad,
+                memoryUsage: resources.totalMemory > 0
+                    ? ((resources.totalMemory - resources.freeMemory) / resources.totalMemory) * 100
+                    : 0,
+                memoryTotal: resources.totalMemory,
+                uptime: resources.uptime,
+                status: 'ONLINE',
+                lastSeen: new Date(),
+            },
+        });
+
+        return c.json(resources);
+    } catch (error) {
+        logger.error({ routerId, error }, 'Failed to get system info');
+        throw new AppError(500, `Failed to get system info: ${(error as Error).message}`);
+    }
+});
+
+// GET /api/wizard/:routerId/interfaces - Get real interfaces from router
+wizardRoutes.get('/:routerId/interfaces', async (c) => {
+    const tenantId = c.get('tenantId');
+    const routerId = c.req.param('routerId');
+
+    const nas = await prisma.nAS.findFirst({
+        where: { id: routerId, tenantId },
+    });
+
+    if (!nas) {
+        throw new AppError(404, 'Router not found');
+    }
+
+    if (!nas.apiUsername || !nas.apiPassword) {
+        throw new AppError(400, 'Router API credentials not configured');
+    }
+
+    try {
+        const interfaces = await mikrotikService.getInterfaces(nas);
+
+        return c.json({
+            interfaces,
+            wanInterface: interfaces.find((i: RouterInterface) => i.isWan)?.name || null,
+        });
+    } catch (error) {
+        logger.error({ routerId, error }, 'Failed to get interfaces');
+        throw new AppError(500, `Failed to get interfaces: ${(error as Error).message}`);
+    }
+});
+
+// Service configuration schema
+const configureServicesSchema = z.object({
+    serviceType: z.enum(['hotspot', 'pppoe', 'both']),
+    wanInterface: z.string().optional(),
+    hotspotConfig: z.object({
+        interfaces: z.array(z.string()).min(1),
+        gatewayIp: z.string().default('10.5.50.1'),
+        poolStart: z.string().default('10.5.50.2'),
+        poolEnd: z.string().default('10.5.50.254'),
+        dnsServers: z.array(z.string()).default(['8.8.8.8', '1.1.1.1']),
+    }).optional(),
+    pppoeConfig: z.object({
+        interfaces: z.array(z.string()).min(1),
+        serviceName: z.string().default('easyisp-pppoe'),
+        localAddress: z.string().default('10.10.10.1'),
+        poolStart: z.string().default('10.10.10.2'),
+        poolEnd: z.string().default('10.10.10.254'),
+    }).optional(),
+    createBackup: z.boolean().default(true),
+    configureFirewall: z.boolean().default(true),
+});
+
+// POST /api/wizard/:routerId/configure - Apply service configuration
+wizardRoutes.post('/:routerId/configure', async (c) => {
+    const tenantId = c.get('tenantId');
+    const routerId = c.req.param('routerId');
+    const body = await c.req.json();
+    const config = configureServicesSchema.parse(body);
+
+    const nas = await prisma.nAS.findFirst({
+        where: { id: routerId, tenantId },
+    });
+
+    if (!nas) {
+        throw new AppError(404, 'Router not found');
+    }
+
+    if (!nas.apiUsername || !nas.apiPassword) {
+        throw new AppError(400, 'Router API credentials not configured');
+    }
+
+    const radiusServer = process.env['RADIUS_SERVER'] ?? '113.30.190.52';
+    const results: string[] = [];
+
+    try {
+        // 1. Create backup if requested
+        if (config.createBackup) {
+            const backupName = await mikrotikService.backupConfig(nas);
+            results.push(`Backup created: ${backupName}`);
+        }
+
+        // 2. Configure firewall if requested
+        if (config.configureFirewall && config.wanInterface) {
+            await mikrotikService.configureFirewall(nas, config.wanInterface);
+            results.push('Firewall NAT configured');
+        }
+
+        // 3. Configure Hotspot if selected
+        if ((config.serviceType === 'hotspot' || config.serviceType === 'both') && config.hotspotConfig) {
+            const hotspotConf: HotspotConfig = {
+                interfaces: config.hotspotConfig.interfaces,
+                gatewayIp: config.hotspotConfig.gatewayIp ?? '10.5.50.1',
+                poolStart: config.hotspotConfig.poolStart ?? '10.5.50.2',
+                poolEnd: config.hotspotConfig.poolEnd ?? '10.5.50.254',
+                dnsServers: config.hotspotConfig.dnsServers ?? ['8.8.8.8', '1.1.1.1'],
+            };
+            await mikrotikService.configureHotspot(
+                nas,
+                hotspotConf,
+                radiusServer,
+                nas.secret
+            );
+            results.push(`Hotspot configured on: ${config.hotspotConfig.interfaces.join(', ')}`);
+        }
+
+        // 4. Configure PPPoE if selected
+        if ((config.serviceType === 'pppoe' || config.serviceType === 'both') && config.pppoeConfig) {
+            const pppoeConf: PPPoEConfig = {
+                interfaces: config.pppoeConfig.interfaces,
+                serviceName: config.pppoeConfig.serviceName ?? 'easyisp-pppoe',
+                localAddress: config.pppoeConfig.localAddress ?? '10.10.10.1',
+                poolStart: config.pppoeConfig.poolStart ?? '10.10.10.2',
+                poolEnd: config.pppoeConfig.poolEnd ?? '10.10.10.254',
+            };
+            await mikrotikService.configurePPPoE(nas, pppoeConf);
+            results.push(`PPPoE configured on: ${config.pppoeConfig.interfaces.join(', ')}`);
+        }
+
+        // 5. Test configuration
+        const testResult = await mikrotikService.testConfiguration(nas);
+
+        logger.info({ routerId, config, testResult }, 'Router services configured');
+
+        return c.json({
+            success: true,
+            message: 'Configuration applied successfully',
+            results,
+            testResult,
+        });
+    } catch (error) {
+        logger.error({ routerId, error }, 'Failed to configure services');
+        throw new AppError(500, `Failed to configure services: ${(error as Error).message}`);
+    }
+});
+
+// GET /api/wizard/:routerId/test - Test current configuration
+wizardRoutes.get('/:routerId/test', async (c) => {
+    const tenantId = c.get('tenantId');
+    const routerId = c.req.param('routerId');
+
+    const nas = await prisma.nAS.findFirst({
+        where: { id: routerId, tenantId },
+    });
+
+    if (!nas) {
+        throw new AppError(404, 'Router not found');
+    }
+
+    if (!nas.apiUsername || !nas.apiPassword) {
+        throw new AppError(400, 'Router API credentials not configured');
+    }
+
+    try {
+        const testResult = await mikrotikService.testConfiguration(nas);
+        return c.json(testResult);
+    } catch (error) {
+        logger.error({ routerId, error }, 'Failed to test configuration');
+        throw new AppError(500, `Failed to test: ${(error as Error).message}`);
+    }
+});

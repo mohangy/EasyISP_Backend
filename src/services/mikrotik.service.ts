@@ -39,6 +39,55 @@ export interface PingResult {
     error?: string;
 }
 
+// New interfaces for enhanced wizard
+export interface SystemResources {
+    uptime: string;
+    version: string;
+    buildTime: string;
+    factorySoftware: string;
+    freeMemory: number;
+    totalMemory: number;
+    cpu: string;
+    cpuCount: number;
+    cpuFrequency: number;
+    cpuLoad: number;
+    freeHddSpace: number;
+    totalHddSpace: number;
+    architectureName: string;
+    boardName: string;
+    platform: string;
+}
+
+export interface RouterInterface {
+    id: string;
+    name: string;
+    type: string;
+    macAddress: string;
+    running: boolean;
+    disabled: boolean;
+    comment: string;
+    isWan: boolean;  // Has default gateway route
+}
+
+export interface HotspotConfig {
+    interfaces: string[];
+    bridgeName?: string;
+    gatewayIp: string;
+    poolStart: string;
+    poolEnd: string;
+    dnsServers: string[];
+    sessionTimeout?: string;
+    idleTimeout?: string;
+}
+
+export interface PPPoEConfig {
+    interfaces: string[];
+    serviceName: string;
+    poolStart: string;
+    poolEnd: string;
+    localAddress: string;
+}
+
 /**
  * MikroTik Service for RouterOS API operations
  */
@@ -458,6 +507,320 @@ export class MikroTikService {
             // Try to connect to API port (8728)
             socket.connect(8728, ipAddress);
         });
+    }
+
+    // ==========================================
+    // ENHANCED WIZARD METHODS
+    // ==========================================
+
+    /**
+     * Get system resources (CPU, memory, uptime, version, board)
+     */
+    async getSystemResources(nas: NASInfo): Promise<SystemResources> {
+        const api = await this.getConnection(nas);
+
+        try {
+            const [resource, identity, routerboard] = await Promise.all([
+                api.write('/system/resource/print'),
+                api.write('/system/identity/print'),
+                api.write('/system/routerboard/print').catch(() => [{}]),
+            ]);
+
+            const res = resource[0] || {};
+            const rb = routerboard[0] || {};
+
+            return {
+                uptime: res.uptime || '0s',
+                version: res.version || 'Unknown',
+                buildTime: res['build-time'] || '',
+                factorySoftware: rb['factory-software'] || '',
+                freeMemory: parseInt(res['free-memory'] || '0'),
+                totalMemory: parseInt(res['total-memory'] || '0'),
+                cpu: res.cpu || 'Unknown',
+                cpuCount: parseInt(res['cpu-count'] || '1'),
+                cpuFrequency: parseInt(res['cpu-frequency'] || '0'),
+                cpuLoad: parseInt(res['cpu-load'] || '0'),
+                freeHddSpace: parseInt(res['free-hdd-space'] || '0'),
+                totalHddSpace: parseInt(res['total-hdd-space'] || '0'),
+                architectureName: res['architecture-name'] || '',
+                boardName: res['board-name'] || rb['model'] || 'Unknown',
+                platform: res.platform || 'MikroTik',
+            };
+        } catch (error) {
+            logger.error({ nasId: nas.id, error }, 'Failed to get system resources');
+            throw error;
+        }
+    }
+
+    /**
+     * Get all interfaces with WAN detection
+     */
+    async getInterfaces(nas: NASInfo): Promise<RouterInterface[]> {
+        const api = await this.getConnection(nas);
+
+        try {
+            // Get all interfaces
+            const interfaces = await api.write('/interface/print');
+
+            // Get routes to detect WAN interface
+            const routes = await api.write('/ip/route/print', ['?dst-address=0.0.0.0/0']);
+            const wanInterfaces = new Set(routes.map((r: any) => r.interface).filter(Boolean));
+
+            return interfaces.map((iface: any) => ({
+                id: iface['.id'] || '',
+                name: iface.name || '',
+                type: iface.type || 'unknown',
+                macAddress: iface['mac-address'] || '',
+                running: iface.running === 'true' || iface.running === true,
+                disabled: iface.disabled === 'true' || iface.disabled === true,
+                comment: iface.comment || '',
+                isWan: wanInterfaces.has(iface.name),
+            }));
+        } catch (error) {
+            logger.error({ nasId: nas.id, error }, 'Failed to get interfaces');
+            throw error;
+        }
+    }
+
+    /**
+     * Backup current router configuration
+     */
+    async backupConfig(nas: NASInfo): Promise<string> {
+        const api = await this.getConnection(nas);
+
+        try {
+            const backupName = `easyisp-backup-${Date.now()}`;
+            await api.write('/system/backup/save', [`=name=${backupName}`]);
+            logger.info({ nasId: nas.id, backupName }, 'Router config backed up');
+            return backupName;
+        } catch (error) {
+            logger.error({ nasId: nas.id, error }, 'Failed to backup config');
+            throw error;
+        }
+    }
+
+    /**
+     * Configure firewall with NAT masquerade
+     */
+    async configureFirewall(nas: NASInfo, wanInterface: string): Promise<boolean> {
+        const api = await this.getConnection(nas);
+
+        try {
+            // Check if masquerade rule already exists
+            const existingNat = await api.write('/ip/firewall/nat/print', [
+                '?chain=srcnat',
+                '?action=masquerade',
+                `?out-interface=${wanInterface}`
+            ]);
+
+            if (existingNat.length === 0) {
+                // Add NAT masquerade rule
+                await api.write('/ip/firewall/nat/add', [
+                    '=chain=srcnat',
+                    '=action=masquerade',
+                    `=out-interface=${wanInterface}`,
+                    '=comment=EasyISP NAT'
+                ]);
+                logger.info({ nasId: nas.id, wanInterface }, 'NAT masquerade configured');
+            }
+
+            return true;
+        } catch (error) {
+            logger.error({ nasId: nas.id, error }, 'Failed to configure firewall');
+            throw error;
+        }
+    }
+
+    /**
+     * Configure complete Hotspot setup
+     */
+    async configureHotspot(nas: NASInfo, config: HotspotConfig, radiusServer: string, radiusSecret: string): Promise<boolean> {
+        const api = await this.getConnection(nas);
+        const poolName = 'hotspot-pool';
+        const profileName = 'easyisp-hotspot';
+
+        try {
+            // 1. Create bridge if multiple interfaces
+            let hotspotInterface = config.interfaces[0];
+            if (config.interfaces.length > 1) {
+                const bridgeName = config.bridgeName || 'bridge-hotspot';
+
+                // Create bridge
+                try {
+                    await api.write('/interface/bridge/add', [`=name=${bridgeName}`]);
+                } catch { /* Bridge may already exist */ }
+
+                // Add ports to bridge
+                for (const iface of config.interfaces) {
+                    try {
+                        await api.write('/interface/bridge/port/add', [
+                            `=bridge=${bridgeName}`,
+                            `=interface=${iface}`
+                        ]);
+                    } catch { /* Port may already be added */ }
+                }
+                hotspotInterface = bridgeName;
+            }
+
+            // 2. Create IP pool
+            try {
+                await api.write('/ip/pool/add', [
+                    `=name=${poolName}`,
+                    `=ranges=${config.poolStart}-${config.poolEnd}`
+                ]);
+            } catch { /* Pool may already exist */ }
+
+            // 3. Add IP address to interface
+            try {
+                await api.write('/ip/address/add', [
+                    `=address=${config.gatewayIp}/24`,
+                    `=interface=${hotspotInterface}`
+                ]);
+            } catch { /* Address may already exist */ }
+
+            // 4. Create DHCP server
+            try {
+                const networkParts = config.gatewayIp.split('.');
+                const network = `${networkParts[0]}.${networkParts[1]}.${networkParts[2]}.0/24`;
+
+                await api.write('/ip/dhcp-server/network/add', [
+                    `=address=${network}`,
+                    `=gateway=${config.gatewayIp}`,
+                    `=dns-server=${config.gatewayIp}`
+                ]);
+
+                await api.write('/ip/dhcp-server/add', [
+                    '=name=hotspot-dhcp',
+                    `=interface=${hotspotInterface}`,
+                    `=address-pool=${poolName}`,
+                    '=lease-time=1h',
+                    '=disabled=no'
+                ]);
+            } catch { /* DHCP may already exist */ }
+
+            // 5. Set DNS
+            await api.write('/ip/dns/set', [
+                `=servers=${config.dnsServers.join(',')}`,
+                '=allow-remote-requests=yes'
+            ]);
+
+            // 6. Create hotspot profile
+            try {
+                await api.write('/ip/hotspot/profile/add', [
+                    `=name=${profileName}`,
+                    '=use-radius=yes',
+                    '=radius-interim-update=5m',
+                    '=login-by=http-chap,mac-cookie',
+                    '=nas-port-type=ethernet',
+                    `=dns-name=hotspot.local`
+                ]);
+            } catch { /* Profile may already exist */ }
+
+            // 7. Create hotspot server
+            try {
+                await api.write('/ip/hotspot/add', [
+                    '=name=easyisp-hotspot',
+                    `=interface=${hotspotInterface}`,
+                    `=address-pool=${poolName}`,
+                    `=profile=${profileName}`,
+                    '=disabled=no'
+                ]);
+            } catch { /* Hotspot may already exist */ }
+
+            // 8. Configure walled garden
+            const walledGardenEntries = [
+                radiusServer,
+            ];
+            for (const entry of walledGardenEntries) {
+                try {
+                    await api.write('/ip/hotspot/walled-garden/ip/add', [
+                        `=dst-host=${entry}`,
+                        '=action=accept'
+                    ]);
+                } catch { /* Entry may already exist */ }
+            }
+
+            logger.info({ nasId: nas.id, hotspotInterface, poolName }, 'Hotspot configured');
+            return true;
+        } catch (error) {
+            logger.error({ nasId: nas.id, error }, 'Failed to configure hotspot');
+            throw error;
+        }
+    }
+
+    /**
+     * Configure complete PPPoE server setup
+     */
+    async configurePPPoE(nas: NASInfo, config: PPPoEConfig): Promise<boolean> {
+        const api = await this.getConnection(nas);
+        const poolName = 'pppoe-pool';
+        const profileName = 'easyisp-pppoe';
+
+        try {
+            // 1. Create IP pool
+            try {
+                await api.write('/ip/pool/add', [
+                    `=name=${poolName}`,
+                    `=ranges=${config.poolStart}-${config.poolEnd}`
+                ]);
+            } catch { /* Pool may already exist */ }
+
+            // 2. Create PPP profile
+            try {
+                await api.write('/ppp/profile/add', [
+                    `=name=${profileName}`,
+                    `=local-address=${config.localAddress}`,
+                    `=remote-address=${poolName}`,
+                    '=use-encryption=yes',
+                    '=only-one=yes',
+                    '=change-tcp-mss=yes'
+                ]);
+            } catch { /* Profile may already exist */ }
+
+            // 3. Create PPPoE server on each interface
+            for (const iface of config.interfaces) {
+                try {
+                    await api.write('/interface/pppoe-server/server/add', [
+                        `=service-name=${config.serviceName}`,
+                        `=interface=${iface}`,
+                        `=default-profile=${profileName}`,
+                        '=authentication=pap,chap,mschap1,mschap2',
+                        '=one-session-per-host=yes',
+                        '=disabled=no'
+                    ]);
+                } catch { /* Server may already exist */ }
+            }
+
+            logger.info({ nasId: nas.id, interfaces: config.interfaces, poolName }, 'PPPoE configured');
+            return true;
+        } catch (error) {
+            logger.error({ nasId: nas.id, error }, 'Failed to configure PPPoE');
+            throw error;
+        }
+    }
+
+    /**
+     * Test configuration by checking if services are running
+     */
+    async testConfiguration(nas: NASInfo): Promise<{ hotspot: boolean; pppoe: boolean; radius: boolean }> {
+        const api = await this.getConnection(nas);
+
+        try {
+            const [hotspots, pppoeServers, radius] = await Promise.all([
+                api.write('/ip/hotspot/print').catch(() => []),
+                api.write('/interface/pppoe-server/server/print').catch(() => []),
+                api.write('/radius/print').catch(() => []),
+            ]);
+
+            return {
+                hotspot: hotspots.length > 0,
+                pppoe: pppoeServers.length > 0,
+                radius: radius.length > 0,
+            };
+        } catch (error) {
+            logger.error({ nasId: nas.id, error }, 'Failed to test configuration');
+            return { hotspot: false, pppoe: false, radius: false };
+        }
     }
 
     /**
