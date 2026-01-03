@@ -181,7 +181,9 @@ provisionRoutes.get('/:token', async (c) => {
 
 # ===== WIREGUARD VPN CONFIGURATION =====
 # Check if interface exists
-:if ([:len [/interface wireguard find name=wg-easyisp]] = 0) do={
+:if ([:len [/interface wireguard find name=wg-easyisp]] > 0) do={
+    /interface wireguard set wg-easyisp private-key="${vpnPrivateKey}"
+} else={
     /interface wireguard add name=wg-easyisp mtu=1420 listen-port=51821 private-key="${vpnPrivateKey}"
     :delay 1s
 }
