@@ -786,12 +786,13 @@ export class MikroTikService {
 
                 // List of all captive portal files to download
                 const captivePortalFiles = ['login.html', 'error.html', 'status.html', 'styles.css', 'script.js'];
+                const tenantId = nas.tenantId ?? '';
 
-                // Download each file
+                // Download each file with tenantId for dynamic injection
                 for (const file of captivePortalFiles) {
                     try {
                         await api.write('/tool/fetch', [
-                            `=url=${apiBaseUrl}/provision/hotspot/${file}`,
+                            `=url=${apiBaseUrl}/provision/hotspot/${file}?tenantId=${tenantId}`,
                             `=dst-path=hotspot/${file}`,
                             '=mode=https',
                             '=check-certificate=no'

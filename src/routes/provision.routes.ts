@@ -17,8 +17,10 @@ const CAPTIVE_PORTAL_DIR = path.resolve(process.cwd(), 'captive-portal');
 const API_BASE_URL = process.env['API_BASE_URL'] ?? 'https://113-30-190-52.cloud-xip.com';
 
 // GET /provision/hotspot/:filename - Serve captive portal static files
+// Accepts ?tenantId=xxx to inject tenant-specific configuration
 provisionRoutes.get('/hotspot/:filename', async (c) => {
     const filename = c.req.param('filename');
+    const tenantId = c.req.query('tenantId') ?? '';
 
     // Only serve allowed files
     if (!CAPTIVE_PORTAL_FILES.includes(filename)) {
@@ -33,6 +35,7 @@ provisionRoutes.get('/hotspot/:filename', async (c) => {
         // Replace placeholders with actual values
         // This allows the portal files to work with any server without hardcoding
         content = content.replace(/__EASYISP_API_URL__/g, API_BASE_URL);
+        content = content.replace(/__TENANT_ID__/g, tenantId);
 
         // Set appropriate content type
         let contentType = 'text/html';

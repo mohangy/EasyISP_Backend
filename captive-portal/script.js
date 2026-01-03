@@ -22,8 +22,9 @@ const CONFIG = {
     // API base URL - can be overridden via ?apiUrl= query param
     apiBaseUrl: urlParams.get('apiUrl') || detectedApiUrl,
 
-    // Tenant ID - can be passed via query param or detected from NAS
-    tenantId: urlParams.get('tenantId') || '',
+    // Tenant ID - __TENANT_ID__ is replaced by backend at serve time
+    // Can also be overridden via ?tenantId= query param
+    tenantId: urlParams.get('tenantId') || '__TENANT_ID__',
 
     // Portal parameters from MikroTik (will be extracted from URL or page)
     macAddress: urlParams.get('mac') || '',
