@@ -6,6 +6,59 @@ import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
 
 export const provisionRoutes = new Hono();
 
+// GET /provision/hotspot/login.html - Serve redirect login page
+// Accepts ?tenantId=xxx query param to generate tenant-specific portal URL
+provisionRoutes.get('/hotspot/login.html', (c) => {
+    const tenantId = c.req.query('tenantId') ?? '';
+    const apiBaseUrl = process.env['API_BASE_URL'] ?? 'https://113-30-190-52.cloud-xip.com';
+
+    // Build the portal URL with tenantId
+    const portalUrl = `${apiBaseUrl}/portal-preview/login.html?tenantId=${tenantId}`;
+
+    // MikroTik variables are $(var)
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+    <title>Redirecting...</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="pragma" content="no-cache">
+    <meta http-equiv="expires" content="-1">
+    <style>body { font-family: sans-serif; text-align: center; padding: 20px; background: #1a1a2e; color: #fff; }</style>
+</head>
+<body>
+    <h3>Please wait...</h3>
+    <p>Redirecting to secure login portal...</p>
+    
+    <form name="redirect" action="${portalUrl}" method="get">
+        <input type="hidden" name="tenantId" value="${tenantId}">
+        <input type="hidden" name="mac" value="$(mac)">
+        <input type="hidden" name="ip" value="$(ip)">
+        <input type="hidden" name="username" value="$(username)">
+        <input type="hidden" name="link-login" value="$(link-login)">
+        <input type="hidden" name="link-orig" value="$(link-orig)">
+        <input type="hidden" name="error" value="$(error)">
+        <input type="hidden" name="chap-id" value="$(chap-id)">
+        <input type="hidden" name="chap-challenge" value="$(chap-challenge)">
+        <input type="hidden" name="link-login-only" value="$(link-login-only)">
+        <input type="hidden" name="link-orig-esc" value="$(link-orig-esc)">
+        <input type="hidden" name="mac-esc" value="$(mac-esc)">
+        <noscript>
+            <input type="submit" value="Click here to login">
+        </noscript>
+    </form>
+
+    <script>
+        // Auto-submit form
+        window.onload = function() {
+            document.redirect.submit();
+        }
+    </script>
+</body>
+</html>`;
+    return c.html(html);
+});
+
 // Encryption key - should be in env in production
 const PROVISION_SECRET = process.env['PROVISION_SECRET'] ?? 'easyisp-provision-secret-key-32b';
 

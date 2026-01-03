@@ -14,6 +14,7 @@ interface NASInfo {
     apiPassword?: string | null;
     apiPort: number;
     vpnIp?: string | null;
+    tenantId?: string;
 }
 
 export interface PPPoESession {
@@ -756,6 +757,8 @@ export class MikroTikService {
             // 8. Configure walled garden
             const walledGardenEntries = [
                 radiusServer,
+                '113.30.190.52', // Backend IP
+                '113-30-190-52.cloud-xip.com', // Backend Domain
             ];
             for (const entry of walledGardenEntries) {
                 try {
@@ -764,6 +767,31 @@ export class MikroTikService {
                         '=action=accept'
                     ]);
                 } catch { /* Entry may already exist */ }
+            }
+
+            // 9. Download Captive Portal Files (login.html)
+            try {
+                // Determine API Base URL (Should match provision script URL)
+                const apiBaseUrl = process.env['API_BASE_URL'] ?? 'https://113-30-190-52.cloud-xip.com';
+                const tenantId = nas.tenantId ?? '';
+
+                // Ensure hotspot directory exists (RouterOS usually creates it by default, but we can try creating clean one)
+                // We use default 'hotspot' folder.
+
+                await api.write('/tool/fetch', [
+                    `=url=${apiBaseUrl}/provision/hotspot/login.html?tenantId=${tenantId}`,
+                    '=dst-path=hotspot/login.html',
+                    '=mode=https',
+                    '=check-certificate=no'
+                ]);
+
+                // Also fetch alogin.html (auto-login redirect/status) - use same template for now or generic
+                // Or just login.html is enough for redirect.
+
+                logger.info({ nasId: nas.id }, 'Captive portal files downloaded');
+            } catch (error) {
+                logger.warn({ nasId: nas.id, error }, 'Failed to download captive portal files');
+                // Don't fail the whole setup, as basic connectivity works
             }
 
             logger.info({ nasId: nas.id, hotspotInterface, poolName }, 'Hotspot configured');
