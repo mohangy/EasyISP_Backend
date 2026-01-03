@@ -13,6 +13,7 @@ interface NASInfo {
     apiUsername?: string | null;
     apiPassword?: string | null;
     apiPort: number;
+    vpnIp?: string | null;
 }
 
 export interface PPPoESession {
@@ -116,8 +117,12 @@ export class MikroTikService {
             throw new Error(`Router ${nas.name} does not have API credentials configured`);
         }
 
+        const host = (nas.vpnIp && nas.vpnIp !== '0.0.0.0') ? nas.vpnIp : nas.ipAddress;
+
+        logger.info({ nasId: nas.id, host, useVpn: !!nas.vpnIp }, 'Connecting to RouterOS API');
+
         const api = new RouterOSAPI({
-            host: nas.ipAddress,
+            host: host,
             port: nas.apiPort || 8728,
             user: nas.apiUsername,
             password: nas.apiPassword,

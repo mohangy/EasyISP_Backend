@@ -278,6 +278,9 @@ model NAS {
   apiUsername       String?
   apiPassword       String?
   apiPort           Int       @default(8728)
+  vpnIp             String?   // WireGuard VPN IP address
+  vpnPublicKey      String?
+  vpnPrivateKey     String?
   boardName         String?
   routerOsVersion   String?
   status            NasStatus @default(PENDING)

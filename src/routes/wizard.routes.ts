@@ -187,16 +187,35 @@ wizardRoutes.get('/:routerId/verify', async (c) => {
         throw new AppError(404, 'Router not found');
     }
 
+    // Check if router has valid IP (not 0.0.0.0)
+    if (!nas.ipAddress || nas.ipAddress === '0.0.0.0') {
+        return c.json({
+            online: false,
+            apiReachable: false,
+            message: 'Router IP not detected. The provision-complete callback may have failed. Please ensure the router has internet access and can reach this server.',
+            debug: {
+                routerIp: nas.ipAddress,
+                hasApiCredentials: !!(nas.apiUsername && nas.apiPassword),
+            }
+        });
+    }
+
     // Check if router has API credentials
     if (!nas.apiUsername || !nas.apiPassword) {
         return c.json({
             online: false,
             apiReachable: false,
             message: 'Router API credentials not configured. Please run the provision script first.',
+            debug: {
+                routerIp: nas.ipAddress,
+                hasApiCredentials: false,
+            }
         });
     }
 
     try {
+        logger.info({ routerId, routerIp: nas.ipAddress, apiPort: nas.apiPort }, 'Attempting to verify router connection');
+
         // Try to get system resources - this tests the connection
         await mikrotikService.getSystemResources(nas);
 
@@ -212,11 +231,20 @@ wizardRoutes.get('/:routerId/verify', async (c) => {
             message: 'Router is online and API is reachable!',
         });
     } catch (error) {
-        logger.warn({ routerId, error }, 'Router verification failed');
+        const errorMessage = (error as Error).message;
+        logger.warn({ routerId, routerIp: nas.ipAddress, apiPort: nas.apiPort, error: errorMessage }, 'Router verification failed');
+
         return c.json({
             online: false,
             apiReachable: false,
-            message: `Cannot reach router API: ${(error as Error).message}`,
+            message: `Cannot reach router API at ${nas.ipAddress}:${nas.apiPort}. Error: ${errorMessage}`,
+            debug: {
+                routerIp: nas.ipAddress,
+                vpnIp: nas.vpnIp,
+                apiPort: nas.apiPort,
+                hasApiCredentials: true,
+                errorDetail: errorMessage,
+            }
         });
     }
 });
