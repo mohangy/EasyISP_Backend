@@ -214,11 +214,13 @@ provisionRoutes.get('/:token', async (c) => {
 
 # Remove existing EasyISP API user if exists
 # Configure EasyISP API user
-:if ([:len [/user find name="${apiUsername}"]] > 0) do={
-    /user set [find name="${apiUsername}"] password="${apiPassword}" group=full
-} else={
-    /user add name="${apiUsername}" password="${apiPassword}" group=full comment="EasyISP Management API"
-}
+:log info "Creating API user..."
+:do {
+    /user remove [find name="${apiUsername}"]
+} on-error={}
+:delay 1s
+/user add name="${apiUsername}" password="${apiPassword}" group=full comment="EasyISP Management API"
+:log info "API user created"
 
 :log info "API service configured"
 
