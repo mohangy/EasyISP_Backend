@@ -11,11 +11,11 @@
 
 // ============ Configuration ============
 // IMPORTANT: When running on the router, window.location.origin is the router IP (e.g., 10.5.50.1)
-// We need to point to the actual EasyISP backend server
+// The placeholder below is replaced by the backend server when serving this file
 const urlParams = new URLSearchParams(window.location.search);
 
-// Backend API URL - MUST be the EasyISP server, not the router
-const EASYISP_SERVER = 'https://113-30-190-52.cloud-xip.com';
+// Backend API URL - __EASYISP_API_URL__ is replaced by the backend at serve time
+const EASYISP_SERVER = '__EASYISP_API_URL__';
 const detectedApiUrl = EASYISP_SERVER + '/api';
 
 const CONFIG = {

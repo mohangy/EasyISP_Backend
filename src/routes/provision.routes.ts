@@ -13,6 +13,9 @@ export const provisionRoutes = new Hono();
 const CAPTIVE_PORTAL_FILES = ['login.html', 'error.html', 'status.html', 'styles.css', 'script.js'];
 const CAPTIVE_PORTAL_DIR = path.resolve(process.cwd(), 'captive-portal');
 
+// API Base URL from environment - used to replace placeholders in portal files
+const API_BASE_URL = process.env['API_BASE_URL'] ?? 'https://113-30-190-52.cloud-xip.com';
+
 // GET /provision/hotspot/:filename - Serve captive portal static files
 provisionRoutes.get('/hotspot/:filename', async (c) => {
     const filename = c.req.param('filename');
@@ -25,7 +28,11 @@ provisionRoutes.get('/hotspot/:filename', async (c) => {
     const filePath = path.join(CAPTIVE_PORTAL_DIR, filename);
 
     try {
-        const content = fs.readFileSync(filePath, 'utf-8');
+        let content = fs.readFileSync(filePath, 'utf-8');
+
+        // Replace placeholders with actual values
+        // This allows the portal files to work with any server without hardcoding
+        content = content.replace(/__EASYISP_API_URL__/g, API_BASE_URL);
 
         // Set appropriate content type
         let contentType = 'text/html';
