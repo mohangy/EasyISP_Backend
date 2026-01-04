@@ -98,6 +98,135 @@ function decryptToken(token: string): { routerId: string; tenantId: string; secr
     }
 }
 
+// Register a new router (Zero-Touch Onboarding)
+// Router calls this endpoint with its details on first boot
+provisionRoutes.post('/register', async (c) => {
+    try {
+        const body = await c.req.json();
+        const { serialNumber, model, routerOsVersion, macAddress, tenantId } = body;
+
+        if (!serialNumber || !macAddress) {
+            return c.json({ error: 'Missing required fields' }, 400);
+        }
+
+        const tenant = await prisma.tenant.findUnique({
+            where: { id: tenantId || 'default' }, // Fallback to default if no tenant
+        });
+
+        if (!tenant) {
+            logger.warn({ tenantId }, 'Registration attempt for unknown tenant');
+            return c.json({ error: 'Invalid tenant' }, 404);
+        }
+
+        // Generate secure random passwords
+        const radiusSecret = randomBytes(16).toString('hex');
+        const restPassword = randomBytes(12).toString('base64');
+        const restUsername = 'easyisp-api';
+
+        // Create or update NAS entry
+        const nas = await prisma.nAS.upsert({
+            where: {
+                // We'll need to use a unique constraint or lookup here
+                // For now, assuming ipAddress might be temporary or we search by serial
+                // But schema only has unique ID. Best to find by serial first.
+                id: (await prisma.nAS.findFirst({ where: { serialNumber } }))?.id ?? 'new'
+            },
+            create: {
+                name: model || `Router-${serialNumber.slice(-4)}`,
+                ipAddress: '0.0.0.0', // Will be updated when router checks in
+                secret: radiusSecret,
+                serialNumber,
+                restUsername,
+                restPassword,
+                apiType: 'REST',
+                routerOsVersion,
+                boardName: model,
+                tenantId: tenant.id,
+                status: 'PENDING',
+            },
+            update: {
+                lastSeen: new Date(),
+                routerOsVersion,
+                restUsername, // Rotate credentials on re-register
+                restPassword,
+                secret: radiusSecret,
+            },
+        });
+
+        logger.info({ serialNumber, nasId: nas.id }, 'Router registered via Zero-Touch');
+
+        // Return configuration required for the router to configure itself
+        return c.json({
+            success: true,
+            config: {
+                nasId: nas.id,
+                radiusSecret,
+                radiusServer: process.env.RADIUS_SERVER_IP || '113.30.190.52',
+                restUsername,
+                restPassword,
+                apiUrl: API_BASE_URL,
+            }
+        });
+
+    } catch (error) {
+        logger.error({ error }, 'Router registration failed');
+        return c.json({ error: 'Registration failed' }, 500);
+    }
+});
+
+// Get router configuration script (Bootstrap)
+// Admin pastes this into a new router to start the process
+provisionRoutes.get('/bootstrap/:tenantId', async (c) => {
+    const tenantId = c.req.param('tenantId');
+    const apiUrl = API_BASE_URL;
+
+    // RouterOS Script
+    const script = `
+# EasyISP Zero-Touch Bootstrap Script
+# Paste this into terminal
+
+:delay 5s
+:log info "Starting EasyISP Bootstrap..."
+
+# 1. basic connectivity check
+/tool fetch url="https://google.com" mode=https dst-path=google-check.html
+:delay 2s
+
+# 2. Get system info
+:local serial [/system routerboard get serial-number]
+:local model [/system routerboard get model]
+:local ver [/system resource get version]
+:local mac [/interface ethernet get [find default-name=ether1] mac-address]
+
+# 3. Register with EasyISP
+:log info "Registering router $serial..."
+:local payload "{\\"serialNumber\\":\\"$serial\\",\\"model\\":\\"$model\\",\\"routerOsVersion\\":\\"$ver\\",\\"macAddress\\":\\"$mac\\",\\"tenantId\\":\\"$tenantId\\"}"
+
+# Use http-data-post to send JSON
+:local result ""
+:do {
+    /tool fetch url="${apiUrl}/api/provision/register" \\
+        http-method=post \\
+        http-header-field="Content-Type: application/json" \\
+        http-data=$payload \\
+        dst-path="easyisp-config.json"
+} on-error={
+    :log error "Failed to register router! Check internet connection."
+    :error "Registration failed"
+}
+
+# 4. Load configuration
+:local configData [/file get easyisp-config.json contents]
+# Parse logic would go here (RouterOS scripting is limited for JSON parsing)
+# For simplicity, we assume success and let the REST API take over later
+# OR, use a simpler response format like "key=value"
+
+:log info "Registration successful! Please wait for provisioning..."
+`;
+
+    return c.text(script);
+});
+
 // Helper: Generate WireGuard keys
 function generateWireGuardKeys(): { privateKey: string; publicKey: string } {
     try {

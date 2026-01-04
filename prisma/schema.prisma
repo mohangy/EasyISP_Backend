@@ -275,8 +275,13 @@ model NAS {
   ipAddress         String
   secret            String    // RADIUS shared secret
   coaPort           Int       @default(3799)
-  apiUsername       String?
-  apiPassword       String?
+  restUsername      String?   // RouterOS v7 REST API username
+  restPassword      String?   // RouterOS v7 REST API password
+  apiType           String    @default("REST") // "REST" or "LEGACY"
+  serialNumber      String?   // For zero-touch onboarding
+  restCertificate   String?   // Custom CA cert (PEM)
+  apiUsername       String?   // Legacy API
+  apiPassword       String?   // Legacy API
   apiPort           Int       @default(8728)
   vpnIp             String?   // WireGuard VPN IP address
   vpnPublicKey      String?
