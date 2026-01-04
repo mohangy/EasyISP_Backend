@@ -306,14 +306,40 @@ provisionRoutes.get('/:token', async (c) => {
 :do {
     /ip hotspot profile set [find default=yes] \\
         use-radius=yes radius-interim-update=5m \\
-        login-by=http-chap,mac-cookie \\
-        nas-port-type=ethernet
+        login-by=http-pap,http-chap,mac-cookie \\
+        nas-port-type=ethernet \\
+        dns-name=hotspot.local
 } on-error={
     :log warning "Could not configure hotspot profile - hotspot may not be set up yet"
 }
 
+# ===== CAPTIVE PORTAL DETECTION WALLED GARDEN =====
+# These entries are CRITICAL for the "Sign in to network" popup to appear
+:log info "Adding captive portal detection entries..."
+# Apple devices
+:do { /ip hotspot walled-garden ip add dst-host=captive.apple.com action=accept comment="Apple CPD" } on-error={}
+:do { /ip hotspot walled-garden ip add dst-host=www.apple.com action=accept comment="Apple CPD" } on-error={}
+:do { /ip hotspot walled-garden ip add dst-host=apple.com action=accept comment="Apple CPD" } on-error={}
+# Android/Google devices
+:do { /ip hotspot walled-garden ip add dst-host=connectivitycheck.gstatic.com action=accept comment="Android CPD" } on-error={}
+:do { /ip hotspot walled-garden ip add dst-host=clients3.google.com action=accept comment="Android CPD" } on-error={}
+:do { /ip hotspot walled-garden ip add dst-host=www.gstatic.com action=accept comment="Android CPD" } on-error={}
+:do { /ip hotspot walled-garden ip add dst-host=android.clients.google.com action=accept comment="Android CPD" } on-error={}
+:do { /ip hotspot walled-garden ip add dst-host=play.googleapis.com action=accept comment="Android CPD" } on-error={}
+# Windows devices
+:do { /ip hotspot walled-garden ip add dst-host=www.msftconnecttest.com action=accept comment="Windows CPD" } on-error={}
+:do { /ip hotspot walled-garden ip add dst-host=msftconnecttest.com action=accept comment="Windows CPD" } on-error={}
+:do { /ip hotspot walled-garden ip add dst-host=www.msftncsi.com action=accept comment="Windows CPD" } on-error={}
+# EasyISP Backend
+:do { /ip hotspot walled-garden ip add dst-host=113.30.190.52 action=accept comment="EasyISP Backend" } on-error={}
+:do { /ip hotspot walled-garden ip add dst-host=113-30-190-52.cloud-xip.com action=accept comment="EasyISP Backend" } on-error={}
+# Generic testing
+:do { /ip hotspot walled-garden ip add dst-host=neverssl.com action=accept comment="Testing" } on-error={}
+:log info "Captive portal detection entries added"
+
 # ===== SYSTEM IDENTITY =====
 /system identity set name="${nas.name}"
+
 
 # ===== NOTIFY SERVER =====
 # Mark configuration complete by calling back to server via VPN or Public IP

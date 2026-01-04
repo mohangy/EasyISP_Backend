@@ -764,11 +764,27 @@ export class MikroTikService {
                 ]);
             } catch { /* Hotspot may already exist */ }
 
-            // 8. Configure walled garden
+            // 8. Configure walled garden (including captive portal detection URLs)
             const walledGardenEntries = [
                 radiusServer,
                 '113.30.190.52', // Backend IP
                 '113-30-190-52.cloud-xip.com', // Backend Domain
+                // Apple captive portal detection
+                'captive.apple.com',
+                'www.apple.com',
+                'apple.com',
+                // Android/Google captive portal detection
+                'connectivitycheck.gstatic.com',
+                'clients3.google.com',
+                'www.gstatic.com',
+                'android.clients.google.com',
+                'play.googleapis.com',
+                // Windows captive portal detection
+                'www.msftconnecttest.com',
+                'msftconnecttest.com',
+                'www.msftncsi.com',
+                // Generic fallback for testing
+                'neverssl.com',
             ];
             for (const entry of walledGardenEntries) {
                 try {
