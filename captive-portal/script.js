@@ -130,18 +130,22 @@ async function init() {
 
     // Try to get MikroTik variables if not set
     if (!CONFIG.macAddress) CONFIG.macAddress = getMikroTikVar('mac-esc');
-    if (!CONFIG.nasIp) CONFIG.nasIp = getMikroTikVar('nas-ip');
+    if (!CONFIG.nasIp) CONFIG.nasIp = getMikroTikVar('nas-ip') || detectNasIpFromPage();
 
-    // If no tenantId, try to get from NAS IP
-    if (!CONFIG.tenantId && CONFIG.nasIp) {
+    // If tenantId is empty or still a placeholder, try to get from NAS IP
+    const needsTenantDetection = !CONFIG.tenantId || CONFIG.tenantId.startsWith('__');
+    if (needsTenantDetection && CONFIG.nasIp) {
         await detectTenantFromNas();
     }
 
     // Setup event listeners
     setupEventListeners();
 
+    // Check if we have a valid tenantId now
+    const hasTenantId = CONFIG.tenantId && !CONFIG.tenantId.startsWith('__');
+
     // Load tenant info and packages
-    if (CONFIG.tenantId) {
+    if (hasTenantId) {
         await Promise.all([
             loadTenantInfo(),
             loadPackages(),
@@ -152,15 +156,65 @@ async function init() {
             await checkActiveSession();
         }
     } else {
-        showError('Configuration error: Tenant ID not found. Add ?tenantId=YOUR_TENANT_ID to the URL.');
+        showError('Configuration error: Tenant ID not found. Please contact support.');
     }
 }
 
 // Try to extract MikroTik variable from page (they inject these)
 function getMikroTikVar(name) {
     // MikroTik replaces $(variable) with actual values in the HTML
-    const match = document.body.innerHTML.match(new RegExp(`\\$\\(${name}\\)`));
-    return match ? '' : ''; // If $(var) still exists, it wasn't replaced
+    // Look for the actual value, not the placeholder
+    const placeholder = `$(${name})`;
+
+    // Search for common patterns where MikroTik injects values
+    // e.g., in hidden inputs, data attributes, or inline scripts
+    const inputs = document.querySelectorAll(`input[name="${name}"], [data-${name}]`);
+    for (const input of inputs) {
+        const value = input.value || input.dataset[name];
+        if (value && value !== placeholder) return value;
+    }
+
+    // If placeholder is still in body, it wasn't replaced
+    if (document.body.innerHTML.includes(placeholder)) {
+        return '';
+    }
+
+    return '';
+}
+
+// Detect NAS IP from the router's login form action URL
+function detectNasIpFromPage() {
+    // MikroTik form action contains the router IP
+    const form = document.getElementById('mikrotik-form');
+    if (form && form.action) {
+        try {
+            const url = new URL(form.action, window.location.href);
+            return url.hostname;
+        } catch { /* Ignore parse errors */ }
+    }
+
+    // Fallback: use current page origin (only works if served from router)
+    // But only if it's a private IP range (not from preview server)
+    const hostname = window.location.hostname;
+    if (isPrivateIp(hostname)) {
+        return hostname;
+    }
+
+    return '';
+}
+
+// Check if IP is in private range (local network)
+function isPrivateIp(ip) {
+    if (!ip) return false;
+    // Simple check for common private ranges
+    return ip.startsWith('10.') ||
+        ip.startsWith('192.168.') ||
+        ip.startsWith('172.16.') ||
+        ip.startsWith('172.17.') ||
+        ip.startsWith('172.18.') ||
+        ip.startsWith('172.19.') ||
+        ip.startsWith('172.2') ||
+        ip.startsWith('172.3');
 }
 
 // Detect tenant from NAS IP
