@@ -519,8 +519,10 @@ export async function initiateSTKPush(
         tenantId,
         transactionType,
         businessShortCode,
-        partyB
-    }, 'Initiating STK Push');
+        partyB,
+        accountReference: finalAccountRef,
+        callbackUrl: mpesaConfig.callbackUrl,
+    }, 'FULL STK Push payload being sent');
 
     // Make the request with timeout (60 seconds like PHP)
     const controller = new AbortController();
@@ -533,7 +535,19 @@ export async function initiateSTKPush(
                 'Authorization': `Bearer ${token}`,
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify(payload),
+            body: JSON.stringify({
+                BusinessShortCode: businessShortCode,
+                Password: password,
+                Timestamp: timestamp,
+                TransactionType: transactionType,
+                Amount: amount,
+                PartyA: formattedPhone,
+                PartyB: partyB,
+                PhoneNumber: formattedPhone,
+                CallBackURL: mpesaConfig.callbackUrl,
+                AccountReference: finalAccountRef.substring(0, 20),  // Max 20 chars
+                TransactionDesc: transactionDesc.substring(0, 13),   // Max 13 chars
+            }),
             signal: controller.signal,
         });
 
@@ -555,7 +569,19 @@ export async function initiateSTKPush(
                 errorMessage: data.errorMessage,
                 errorCode: data.errorCode,
                 tenantId,
-                payload: { ...payload, Password: '[REDACTED]' }
+                payload: {
+                    BusinessShortCode: businessShortCode,
+                    Password: '[REDACTED]',
+                    Timestamp: timestamp,
+                    TransactionType: transactionType,
+                    Amount: amount,
+                    PartyA: formattedPhone,
+                    PartyB: partyB,
+                    PhoneNumber: formattedPhone,
+                    CallBackURL: mpesaConfig.callbackUrl,
+                    AccountReference: finalAccountRef.substring(0, 20),
+                    TransactionDesc: transactionDesc.substring(0, 13),
+                }
             }, 'M-Pesa STK Push error response');
             throw new Error(`M-Pesa Error: ${data.errorMessage}`);
         }
