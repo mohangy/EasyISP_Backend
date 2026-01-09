@@ -135,18 +135,37 @@ export async function getTenantMpesaConfig(tenantId: string, purpose?: 'HOTSPOT'
     const centralStoreNumber = config.mpesa.shortcode; // Your authorized shortcode
     const centralCallbackUrl = config.mpesa.callbackUrl;
 
-    // Use tenant's credentials if provided, otherwise fallback to central
-    const consumerKey = gateway.consumerKey || centralConsumerKey;
-    const consumerSecret = gateway.consumerSecret || centralConsumerSecret;
-    const passkey = gateway.passkey || centralPasskey;
+    // AGGREGATOR MODEL: Always use central credentials for API calls
+    // Tenant only provides the destination (shortcode, accountNumber)
+    // If central credentials are available, use them (overrides tenant's invalid creds)
+    const useCentralCredentials = !!centralConsumerKey && !!centralConsumerSecret && !!centralPasskey;
 
-    // For BANK/BUYGOODS: storeNumber is YOUR shortcode (has API access)
-    // If tenant doesn't have their own API access, use central storeNumber
-    const storeNumber = gateway.storeNumber || (gateway.consumerKey ? undefined : centralStoreNumber);
+    let consumerKey: string;
+    let consumerSecret: string;
+    let passkey: string;
+    let storeNumber: string | undefined;
 
-    // Must have credentials (either tenant's or central)
+    if (useCentralCredentials) {
+        // Use YOUR (central) credentials for API authentication
+        consumerKey = centralConsumerKey;
+        consumerSecret = centralConsumerSecret;
+        passkey = centralPasskey;
+        storeNumber = centralStoreNumber; // Your shortcode for BusinessShortCode
+
+        logger.info({ tenantId, mode: 'AGGREGATOR' }, 'Using central M-Pesa credentials');
+    } else {
+        // Fallback: Use tenant's own credentials
+        consumerKey = gateway.consumerKey || '';
+        consumerSecret = gateway.consumerSecret || '';
+        passkey = gateway.passkey || '';
+        storeNumber = gateway.storeNumber;
+
+        logger.info({ tenantId, mode: 'TENANT' }, 'Using tenant M-Pesa credentials');
+    }
+
+    // Must have credentials
     if (!consumerKey || !consumerSecret) {
-        logger.warn({ tenantId }, 'M-Pesa: No credentials available (tenant or central)');
+        logger.warn({ tenantId }, 'M-Pesa: No credentials available');
         return null;
     }
 
@@ -155,11 +174,11 @@ export async function getTenantMpesaConfig(tenantId: string, purpose?: 'HOTSPOT'
         consumerKey,
         consumerSecret,
         shortcode: gateway.shortcode,  // Tenant's destination (Paybill/Till/Bank)
-        storeNumber: storeNumber || undefined,  // Authorized shortcode for API (may be central)
+        storeNumber: storeNumber || undefined,  // Authorized shortcode for API (central or tenant's)
         accountNumber: gateway.accountNumber || undefined,  // For BANK: tenant's bank account
         passkey: passkey || '',
         callbackUrl: (tenant as any)?.mpesaCallbackUrl || centralCallbackUrl || '',
-        env: (gateway.env as 'sandbox' | 'production') || 'production',
+        env: (gateway.env as 'sandbox' | 'production') || config.mpesa.env || 'production',
     };
 }
 
@@ -176,22 +195,37 @@ function getBaseUrl(env: 'sandbox' | 'production'): string {
  * Get OAuth access token (cached)
  */
 export async function getAccessToken(tenantId: string, purpose?: 'HOTSPOT' | 'PPPOE'): Promise<string> {
-    const config = await getTenantMpesaConfig(tenantId, purpose);
-    if (!config) {
+    const mpesaConfig = await getTenantMpesaConfig(tenantId, purpose);
+    if (!mpesaConfig) {
         throw new Error('M-Pesa not configured for this tenant');
     }
 
+    // Debug: Log config being used (mask secrets)
+    logger.info({
+        tenantId,
+        env: mpesaConfig.env,
+        hasConsumerKey: !!mpesaConfig.consumerKey,
+        consumerKeyPrefix: mpesaConfig.consumerKey?.substring(0, 8) + '...',
+        hasConsumerSecret: !!mpesaConfig.consumerSecret,
+        hasPasskey: !!mpesaConfig.passkey,
+        shortcode: mpesaConfig.shortcode,
+        storeNumber: mpesaConfig.storeNumber,
+    }, 'M-Pesa config for OAuth');
+
     // Cache key specific to this set of credentials
-    const cacheKey = `${tenantId}:${config.consumerKey}`;
+    const cacheKey = `${tenantId}:${mpesaConfig.consumerKey}`;
     const cached = tokenCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
+        logger.debug({ tenantId }, 'Using cached M-Pesa token');
         return cached.token;
     }
 
-    const baseUrl = getBaseUrl(config.env);
-    const consumerKey = config.consumerKey.trim();
-    const consumerSecret = config.consumerSecret.trim();
+    const baseUrl = getBaseUrl(mpesaConfig.env);
+    const consumerKey = mpesaConfig.consumerKey.trim();
+    const consumerSecret = mpesaConfig.consumerSecret.trim();
     const auth = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64');
+
+    logger.info({ baseUrl, tenantId }, 'Fetching new M-Pesa OAuth token');
 
     const response = await fetch(`${baseUrl}/oauth/v1/generate?grant_type=client_credentials`, {
         method: 'GET',
@@ -200,13 +234,26 @@ export async function getAccessToken(tenantId: string, purpose?: 'HOTSPOT' | 'PP
         },
     });
 
+    const responseText = await response.text();
+
     if (!response.ok) {
-        const error = await response.text();
-        logger.error({ error, tenantId }, 'Failed to get M-Pesa access token');
-        throw new Error(`Failed to get M-Pesa access token: ${error}`);
+        logger.error({
+            tenantId,
+            status: response.status,
+            statusText: response.statusText,
+            responseBody: responseText,
+            baseUrl
+        }, 'Failed to get M-Pesa access token');
+        throw new Error(`Failed to get M-Pesa access token: ${response.status} ${response.statusText} - ${responseText}`);
     }
 
-    const data = await response.json() as { access_token: string; expires_in: string };
+    let data: { access_token: string; expires_in: string };
+    try {
+        data = JSON.parse(responseText);
+    } catch (e) {
+        logger.error({ tenantId, responseText }, 'Failed to parse M-Pesa OAuth response');
+        throw new Error(`Failed to parse M-Pesa response: ${responseText}`);
+    }
 
     // Cache token (expires in ~1 hour, cache for 50 minutes)
     tokenCache.set(cacheKey, {
@@ -214,6 +261,7 @@ export async function getAccessToken(tenantId: string, purpose?: 'HOTSPOT' | 'PP
         expiresAt: Date.now() + 50 * 60 * 1000,
     });
 
+    logger.info({ tenantId }, 'M-Pesa OAuth token obtained successfully');
     return data.access_token;
 }
 
