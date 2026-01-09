@@ -446,12 +446,17 @@ portalRoutes.post('/mpesa/initiate', async (c) => {
     }
 
     try {
+        // Use cleaned, stripped MAC address as Account Reference (max 12 chars) if available
+        const accountRef = data.macAddress
+            ? data.macAddress.replace(/[^A-Fa-f0-9]/g, '').substring(0, 12).toUpperCase()
+            : `HS-${pkg.name.substring(0, 9)}`;
+
         // Initiate STK push
         const response = await initiateSTKPush(
             data.tenantId,
             data.phone,
             pkg.price,
-            `HS-${pkg.name.substring(0, 10)}`,
+            accountRef,
             `Hotspot: ${pkg.name}`
         );
 
@@ -573,7 +578,8 @@ portalRoutes.get('/mpesa/status', async (c) => {
                     generatedReceipt,
                     pendingPayment.phone,
                     pendingPayment.packageId,
-                    pendingPayment.amount
+                    pendingPayment.amount,
+                    pendingPayment.macAddress || undefined
                 );
 
                 // Update pending payment
@@ -629,7 +635,24 @@ portalRoutes.post('/mpesa/verify-sms', async (c) => {
         throw new AppError(400, 'Could not extract M-Pesa transaction code from message');
     }
 
-    // Check if this transaction code is already used
+    // Check if customer already exists with this code (Recovery scenario)
+    const existingCustomer = await prisma.customer.findFirst({
+        where: { username: parsed.code, tenantId: data.tenantId },
+        include: { package: true }
+    });
+
+    if (existingCustomer) {
+        // Customer already created - return credentials
+        return c.json({
+            success: true,
+            username: parsed.code,
+            password: parsed.code,
+            message: 'Account already exists',
+            package: existingCustomer.package?.name // Include package name if possible
+        });
+    }
+
+    // Check if this transaction code is already used (but no customer found?)
     const existingPayment = await prisma.payment.findFirst({
         where: { transactionId: parsed.code },
     });
@@ -637,11 +660,6 @@ portalRoutes.post('/mpesa/verify-sms', async (c) => {
     if (existingPayment) {
         throw new AppError(400, 'This transaction has already been used');
     }
-
-    // Check if customer already exists with this code
-    const existingCustomer = await prisma.customer.findFirst({
-        where: { username: parsed.code, tenantId: data.tenantId },
-    });
 
     if (existingCustomer) {
         // Customer already created - return credentials
@@ -674,7 +692,8 @@ portalRoutes.post('/mpesa/verify-sms', async (c) => {
             parsed.code,
             '', // Phone not available from SMS parse
             data.packageId,
-            parsed.amount || pkg.price
+            parsed.amount || pkg.price,
+            data.macAddress
         );
 
         logger.info({
@@ -799,7 +818,8 @@ portalRoutes.post('/mpesa/callback', async (c) => {
             mpesaReceiptNumber,
             phone,
             pendingPayment.packageId,
-            amount
+            amount,
+            pendingPayment.macAddress || undefined
         );
 
         // Update pending payment

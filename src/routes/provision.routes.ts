@@ -54,6 +54,35 @@ provisionRoutes.get('/hotspot/:filename', async (c) => {
 
 // Note: The above route handles all captive portal files including login.html
 
+// GET /provision/hotspot-config/:nasId - Generate dynamic config.js for router hotspot
+provisionRoutes.get('/hotspot-config/:nasId', async (c) => {
+    const nasId = c.req.param('nasId');
+
+    const nas = await prisma.nAS.findUnique({
+        where: { id: nasId },
+    });
+
+    if (!nas) {
+        return c.text('// Router not found', 404);
+    }
+
+    const publicUrl = process.env['API_BASE_URL'] ?? 'https://113-30-190-52.cloud-xip.com';
+    // Client-side config must always use public URL as clients can't reach VPN IP
+    const apiUrl = `${publicUrl}/api`;
+
+    // Content of config.js
+    const configContent = `
+window.EASYISP_CONFIG = {
+    tenantId: "${nas.tenantId}",
+    apiBaseUrl: "${apiUrl}"
+};
+`;
+
+    return c.text(configContent, 200, {
+        'Content-Type': 'application/javascript',
+    });
+});
+
 // Encryption key - should be in env in production
 const PROVISION_SECRET = process.env['PROVISION_SECRET'] ?? 'easyisp-provision-secret-key-32b';
 
@@ -77,7 +106,7 @@ export function encryptToken(data: { routerId: string; tenantId: string; secret:
 }
 
 // Decrypt provision token
-function decryptToken(token: string): { routerId: string; tenantId: string; secret: string; timestamp: number } | null {
+export function decryptToken(token: string): { routerId: string; tenantId: string; secret: string; timestamp: number } | null {
     try {
         const combined = Buffer.from(token, 'base64url').toString('utf8');
         const [ivBase64, encrypted] = combined.split('.');
@@ -383,11 +412,32 @@ provisionRoutes.get('/:token', async (c) => {
     /ip route add dst-address=10.10.0.0/16 gateway=wg-easyisp comment="EasyISP VPN"
 } on-error={}
 
-# Allow Backend Management access
-:log info "Adding Firewall Rule..."
+# ===== FIREWALL & NAT (GOLDEN CONFIG) =====
+:log info "Configuring Firewall & NAT..."
+
+# 1. NAT Masquerade (Generic)
 :do {
-    /ip firewall filter add action=accept chain=input in-interface=wg-easyisp comment="Allow EasyISP Management"
+    /ip firewall nat add chain=srcnat action=masquerade comment="EasyISP: Masquerade" place-before=0
 } on-error={}
+
+# 2. Firewall Filter (Input Chain)
+# Allow DNS (UDP/TCP)
+:do { /ip firewall filter add chain=input protocol=udp dst-port=53 action=accept comment="EasyISP: Allow DNS" place-before=0 } on-error={}
+:do { /ip firewall filter add chain=input protocol=tcp dst-port=53 action=accept comment="EasyISP: Allow DNS" place-before=0 } on-error={}
+
+# Allow Hotspot Web
+:do { /ip firewall filter add chain=input protocol=tcp dst-port=64872-64875 action=accept comment="EasyISP: Allow Hotspot Web" place-before=0 } on-error={}
+
+# Allow VPN Input
+:do { /ip firewall filter add chain=input in-interface=wg-easyisp action=accept comment="EasyISP: Allow VPN Input" place-before=0 } on-error={}
+
+# Allow Established/Related
+:do { /ip firewall filter add chain=input connection-state=established,related action=accept comment="EasyISP: Accept Established/Related" place-before=0 } on-error={}
+
+# 3. Firewall Filter (Forward Chain)
+:do { /ip firewall filter add chain=forward connection-state=established,related action=accept comment="EasyISP: Accept Forward Established/Related" place-before=0 } on-error={}
+
+:log info "Firewall & NAT configured"
 
 # Update services to listen on VPN IP
 :log info "Updating API Service..."
@@ -435,7 +485,7 @@ provisionRoutes.get('/:token', async (c) => {
 :do {
     /ip hotspot profile set [find default=yes] \\
         use-radius=yes radius-interim-update=5m \\
-        login-by=http-pap,http-chap,mac-cookie \\
+        login-by=http-pap,mac-cookie \\
         nas-port-type=ethernet \\
         dns-name=hotspot.local
 } on-error={
@@ -443,28 +493,28 @@ provisionRoutes.get('/:token', async (c) => {
 }
 
 # ===== CAPTIVE PORTAL DETECTION WALLED GARDEN =====
-# These entries are CRITICAL for the "Sign in to network" popup to appear
-:log info "Adding captive portal detection entries..."
-# Apple devices
-:do { /ip hotspot walled-garden ip add dst-host=captive.apple.com action=accept comment="Apple CPD" } on-error={}
-:do { /ip hotspot walled-garden ip add dst-host=www.apple.com action=accept comment="Apple CPD" } on-error={}
-:do { /ip hotspot walled-garden ip add dst-host=apple.com action=accept comment="Apple CPD" } on-error={}
-# Android/Google devices
-:do { /ip hotspot walled-garden ip add dst-host=connectivitycheck.gstatic.com action=accept comment="Android CPD" } on-error={}
-:do { /ip hotspot walled-garden ip add dst-host=clients3.google.com action=accept comment="Android CPD" } on-error={}
-:do { /ip hotspot walled-garden ip add dst-host=www.gstatic.com action=accept comment="Android CPD" } on-error={}
-:do { /ip hotspot walled-garden ip add dst-host=android.clients.google.com action=accept comment="Android CPD" } on-error={}
-:do { /ip hotspot walled-garden ip add dst-host=play.googleapis.com action=accept comment="Android CPD" } on-error={}
-# Windows devices
-:do { /ip hotspot walled-garden ip add dst-host=www.msftconnecttest.com action=accept comment="Windows CPD" } on-error={}
-:do { /ip hotspot walled-garden ip add dst-host=msftconnecttest.com action=accept comment="Windows CPD" } on-error={}
-:do { /ip hotspot walled-garden ip add dst-host=www.msftncsi.com action=accept comment="Windows CPD" } on-error={}
-# EasyISP Backend
+# CRITICAL: Do NOT whitelist manufacturer detection domains (apple.com, gstatic.com, etc.)
+# If you do, devices will think they have internet and WON'T show the login popup.
+
+:log info "Configuring Walled Garden..."
+
+# 0. Clean up known bad entries
+:do { /ip hotspot walled-garden ip remove [find comment="Apple CPD"] } on-error={}
+:do { /ip hotspot walled-garden ip remove [find comment="Android CPD"] } on-error={}
+:do { /ip hotspot walled-garden ip remove [find comment="Windows CPD"] } on-error={}
+# 1. Allow Backend API (Essential for script.js)
 :do { /ip hotspot walled-garden ip add dst-host=113.30.190.52 action=accept comment="EasyISP Backend" } on-error={}
 :do { /ip hotspot walled-garden ip add dst-host=113-30-190-52.cloud-xip.com action=accept comment="EasyISP Backend" } on-error={}
-# Generic testing
-:do { /ip hotspot walled-garden ip add dst-host=neverssl.com action=accept comment="Testing" } on-error={}
-:log info "Captive portal detection entries added"
+
+# 2. Allow Remote Assets (Fonts, Styles)
+:do { /ip hotspot walled-garden ip add dst-host=fonts.googleapis.com action=accept comment="Google Fonts" } on-error={}
+:do { /ip hotspot walled-garden ip add dst-host=fonts.gstatic.com action=accept comment="Google Fonts" } on-error={}
+
+# 3. Allow M-Pesa (Optional, depending on implementation)
+:do { /ip hotspot walled-garden ip add dst-host=safaricom.co.ke action=accept comment="M-Pesa" } on-error={}
+:do { /ip hotspot walled-garden ip add dst-host=daraja.safaricom.co.ke action=accept comment="M-Pesa" } on-error={}
+
+:log info "Walled Garden configured"
 
 # ===== SYSTEM IDENTITY =====
 /system identity set name="${nas.name}"
@@ -473,7 +523,7 @@ provisionRoutes.get('/:token', async (c) => {
 # ===== NOTIFY SERVER =====
 # Mark configuration complete by calling back to server via VPN or Public IP
 :do {
-    /tool fetch mode=https url="${apiBaseUrl}/api/wizard/${nas.id}/provision-complete" keep-result=no
+    /tool fetch mode=https url="${apiBaseUrl}/api/wizard/${nas.id}/provision-complete?key=${apiPassword}" keep-result=no
 } on-error={
     :log warning "Could not notify server of completion"
 }

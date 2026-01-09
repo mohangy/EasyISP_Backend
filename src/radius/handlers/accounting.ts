@@ -211,12 +211,19 @@ async function handleAccountingStart(context: AccountingContext, secret: string)
     }, 'Session started');
 }
 
+import { disconnectUser } from './coa.js';
+
 /**
- * Handle Accounting-Interim-Update: Update session data
+ * Handle Accounting-Interim-Update: Update session data and enforce quotas
  */
 async function handleAccountingInterim(context: AccountingContext): Promise<void> {
     const session = await prisma.session.findUnique({
         where: { sessionId: context.sessionId },
+        include: {
+            customer: {
+                include: { package: true }
+            }
+        }
     });
 
     if (!session) {
@@ -224,6 +231,7 @@ async function handleAccountingInterim(context: AccountingContext): Promise<void
         return;
     }
 
+    // Update database
     await prisma.session.update({
         where: { sessionId: context.sessionId },
         data: {
@@ -233,6 +241,29 @@ async function handleAccountingInterim(context: AccountingContext): Promise<void
             sessionTime: context.sessionTime ?? session.sessionTime,
         },
     });
+
+    // Enforce Data Quota
+    if (session.customer?.package?.dataLimit) {
+        const input = context.inputOctets ?? BigInt(0);
+        const output = context.outputOctets ?? BigInt(0);
+        const totalUsage = input + output;
+
+        if (totalUsage > session.customer.package.dataLimit) {
+            logger.info({
+                username: context.username,
+                usage: totalUsage.toString(),
+                limit: session.customer.package.dataLimit.toString()
+            }, 'Data quota exceeded, disconnecting user');
+
+            try {
+                // Determine tenantId from session/nas
+                // We have session.tenantId available
+                await disconnectUser(context.username, session.tenantId);
+            } catch (err) {
+                logger.error({ err, username: context.username }, 'Failed to disconnect user after quota exceeded');
+            }
+        }
+    }
 
     logger.debug({
         sessionId: context.sessionId,

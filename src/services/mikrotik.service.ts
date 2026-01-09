@@ -5,6 +5,7 @@
 
 import { RouterOSAPI } from 'routeros-client';
 import { logger } from '../lib/logger.js';
+import { prisma } from '../lib/prisma.js';
 
 interface NASInfo {
     id: string;
@@ -90,6 +91,48 @@ export interface PPPoEConfig {
     localAddress: string;
 }
 
+// Wireless interface information
+export interface WirelessInterface {
+    id: string;
+    name: string;
+    macAddress: string;
+    ssid: string;
+    band: string;
+    channel: string;
+    frequency: number;
+    mode: string;
+    securityProfile: string;
+    running: boolean;
+    disabled: boolean;
+}
+
+// Wireless configuration options
+export interface WirelessConfig {
+    interfaceName: string;
+    ssid: string;
+    band?: '2ghz-b' | '2ghz-b/g' | '2ghz-b/g/n' | '5ghz-a' | '5ghz-a/n' | '5ghz-a/n/ac';
+    channel?: string;
+    securityMode?: 'none' | 'wpa-psk' | 'wpa2-psk' | 'wpa-eap' | 'wpa2-eap';
+    passphrase?: string;
+    disabled?: boolean;
+}
+
+// Firmware/package information
+export interface FirmwareInfo {
+    currentVersion: string;
+    latestVersion: string | null;
+    updateAvailable: boolean;
+    channel: string;
+    packages: PackageInfo[];
+}
+
+export interface PackageInfo {
+    name: string;
+    version: string;
+    buildTime: string;
+    scheduled: string | null;
+}
+
 /**
  * MikroTik Service for RouterOS API operations
  */
@@ -162,6 +205,40 @@ export class MikroTikService {
             }));
         } catch (error) {
             logger.error({ nasId: nas.id, error }, 'Failed to get active sessions');
+            throw error;
+        }
+    }
+
+    /**
+     * Get all active Hotspot sessions from the router
+     */
+    async getActiveHotspotUsers(nas: NASInfo): Promise<{
+        name: string;
+        address: string;
+        'mac-address': string;
+        uptime: string;
+        'bytes-in': string;
+        'bytes-out': string;
+        'host-name'?: string;
+        server?: string;
+    }[]> {
+        const api = await this.getConnection(nas);
+
+        try {
+            const result = await api.write('/ip/hotspot/active/print');
+
+            return result.map((item: any) => ({
+                name: item.user || item.name || '',
+                address: item.address || '',
+                'mac-address': item['mac-address'] || '',
+                uptime: item.uptime || '0s',
+                'bytes-in': item['bytes-in'] || '0',
+                'bytes-out': item['bytes-out'] || '0',
+                'host-name': item['host-name'] || '',
+                server: item.server || '',
+            }));
+        } catch (error) {
+            logger.error({ nasId: nas.id, error }, 'Failed to get active hotspot users');
             throw error;
         }
     }
@@ -520,6 +597,85 @@ export class MikroTikService {
     // ==========================================
 
     /**
+     * Update hotspot files on the router by fetching them from the server
+     */
+    async updateHotspotFiles(nas: NASInfo): Promise<{ success: boolean; files: string[] }> {
+        const api = await this.getConnection(nas);
+
+        const publicUrl = process.env['API_BASE_URL'] ?? 'https://113-30-190-52.cloud-xip.com';
+        // If router is on VPN, use internal IP for reliable file transfer
+        // Note: 10.10.0.1 is the server's WireGuard IP
+        const useVpn = !!nas.vpnIp;
+        const baseUrl = useVpn ? 'http://10.10.0.1:3000' : publicUrl;
+
+        const files = ['login.html', 'logout.html', 'status.html', 'alogin.html', 'styles.css', 'script.js'];
+        const updatedFiles: string[] = [];
+
+        try {
+            // First ensure hotspot directory exists (it usually does if hotspot is setup)
+            // We'll just fetch files into flash/hotspot or hotspot/ depending on router
+            // Standard hotspot path is 'hotspot/'
+
+            for (const file of files) {
+                const url = `${baseUrl}/portal-preview/${file}`;
+
+                logger.info({ nasId: nas.id, file, url, useVpn }, 'Fetching hotspot file to router');
+
+                // Using /tool/fetch
+                await api.write('/tool/fetch', [
+                    `=url=${url}`,
+                    `=dst-path=hotspot/${file}`,
+                    // Use http mode if internal VPN (no SSL cert issues), otherwise https
+                    `=mode=${useVpn ? 'http' : 'https'}`,
+                    `=check-certificate=no` // Important for self-signed or dev certs
+                ]);
+
+                updatedFiles.push(file);
+                // detailed logging or waiting could be added here
+            }
+
+            // Fetch dynamic config.js
+            const configUrl = `${baseUrl}/provision/hotspot-config/${nas.id}`;
+            logger.info({ nasId: nas.id, url: configUrl }, 'Fetching dynamic hotspot config');
+
+            await api.write('/tool/fetch', [
+                `=url=${configUrl}`,
+                `=dst-path=hotspot/config.js`,
+                `=mode=${useVpn ? 'http' : 'https'}`,
+                `=check-certificate=no`
+            ]);
+            updatedFiles.push('config.js');
+
+            return { success: true, files: updatedFiles };
+        } catch (error) {
+            logger.error({ nasId: nas.id, error }, 'Failed to update hotspot files');
+            throw new Error(`Failed to update hotspot files: ${(error as Error).message}`);
+        }
+    }
+
+    /**
+     * Update router configuration (Golden State)
+     * Configures Firewall, NAT, RADIUS, Walled Garden, etc.
+     */
+    async updateRouterConfiguration(nasId: string): Promise<void> {
+        const nas = await prisma.nAS.findUnique({ where: { id: nasId } });
+        if (!nas) {
+            throw new Error('NAS not found');
+        }
+
+        const api = await this.getConnection(nas);
+        const startTime = Date.now();
+
+        try {
+            await this.configureGoldenState(api, nas);
+            logger.info({ nasId, duration: Date.now() - startTime }, 'Router configuration updated successfully');
+        } catch (error) {
+            logger.error({ nasId, error }, 'Failed to update router configuration');
+            throw new Error(`Failed to update configuration: ${(error as Error).message}`);
+        }
+    }
+
+    /**
      * Get system resources (CPU, memory, uptime, version, board)
      */
     async getSystemResources(nas: NASInfo): Promise<SystemResources> {
@@ -601,6 +757,40 @@ export class MikroTikService {
             return backupName;
         } catch (error) {
             logger.error({ nasId: nas.id, error }, 'Failed to backup config');
+            throw error;
+        }
+    }
+
+    /**
+     * Restore configuration from backup
+     * WARNING: This will reboot the router
+     */
+    async restoreBackup(nas: NASInfo, backupName: string): Promise<boolean> {
+        const api = await this.getConnection(nas);
+
+        try {
+            logger.info({ nasId: nas.id, backupName }, 'Restoring backup (router will reboot)...');
+
+            // This command reboots the router, so the connection will be dropped
+            // We ignore the specific error that comes from the connection closing
+            await api.write('/system/backup/load', [
+                `=name=${backupName}`,
+                '=password=' // Zero-touch backups don't have passwords by default
+            ]).catch((err: any) => {
+                // If error is just connection lost, that's expected
+                if (err.message?.includes('Socket closed') || err.message?.includes('Connection reset')) {
+                    return;
+                }
+                throw err;
+            });
+
+            return true;
+        } catch (error) {
+            // Re-check if it's a connection error (sometimes comes here)
+            if ((error as Error).message?.includes('Socket closed') || (error as Error).message?.includes('Connection reset')) {
+                return true;
+            }
+            logger.error({ nasId: nas.id, error }, 'Failed to restore backup');
             throw error;
         }
     }
@@ -908,6 +1098,485 @@ export class MikroTikService {
         }
     }
 
+    // ==========================================
+    // WIRELESS CONFIGURATION METHODS
+    // ==========================================
+
+    /**
+     * Get all wireless interfaces with configuration details
+     */
+    async getWirelessInterfaces(nas: NASInfo): Promise<WirelessInterface[]> {
+        const api = await this.getConnection(nas);
+
+        try {
+            const interfaces = await api.write('/interface/wireless/print');
+
+            return interfaces.map((iface: any) => ({
+                id: iface['.id'] || '',
+                name: iface.name || '',
+                macAddress: iface['mac-address'] || '',
+                ssid: iface.ssid || '',
+                band: iface.band || '',
+                channel: iface.channel || 'auto',
+                frequency: parseInt(iface.frequency || '0'),
+                mode: iface.mode || '',
+                securityProfile: iface['security-profile'] || 'default',
+                running: iface.running === 'true' || iface.running === true,
+                disabled: iface.disabled === 'true' || iface.disabled === true,
+            }));
+        } catch (error) {
+            logger.error({ nasId: nas.id, error }, 'Failed to get wireless interfaces');
+            throw error;
+        }
+    }
+
+    /**
+     * Get available wireless security profiles
+     */
+    async getSecurityProfiles(nas: NASInfo): Promise<{ name: string; mode: string; authentication: string }[]> {
+        const api = await this.getConnection(nas);
+
+        try {
+            const profiles = await api.write('/interface/wireless/security-profiles/print');
+
+            return profiles.map((profile: any) => ({
+                name: profile.name || '',
+                mode: profile.mode || 'none',
+                authentication: profile['authentication-types'] || '',
+            }));
+        } catch (error) {
+            logger.error({ nasId: nas.id, error }, 'Failed to get security profiles');
+            throw error;
+        }
+    }
+
+    /**
+     * Configure a wireless interface
+     */
+    async configureWireless(nas: NASInfo, config: WirelessConfig): Promise<boolean> {
+        const api = await this.getConnection(nas);
+
+        try {
+            // Find the wireless interface
+            const interfaces = await api.write('/interface/wireless/print', [
+                `?name=${config.interfaceName}`
+            ]);
+
+            if (interfaces.length === 0) {
+                logger.warn({ nasId: nas.id, interfaceName: config.interfaceName }, 'Wireless interface not found');
+                return false;
+            }
+
+            const ifaceId = interfaces[0]['.id'];
+
+            // Build command parameters
+            const params: string[] = [`=.id=${ifaceId}`];
+
+            if (config.ssid) {
+                params.push(`=ssid=${config.ssid}`);
+            }
+
+            if (config.band) {
+                params.push(`=band=${config.band}`);
+            }
+
+            if (config.channel) {
+                params.push(`=channel=${config.channel}`);
+            }
+
+            if (config.disabled !== undefined) {
+                params.push(`=disabled=${config.disabled ? 'yes' : 'no'}`);
+            }
+
+            // If security mode is specified, create/update security profile
+            if (config.securityMode && config.securityMode !== 'none') {
+                const profileName = `easyisp-${config.interfaceName}`;
+
+                // Try to create or update security profile
+                try {
+                    const existingProfiles = await api.write('/interface/wireless/security-profiles/print', [
+                        `?name=${profileName}`
+                    ]);
+
+                    if (existingProfiles.length > 0) {
+                        // Update existing profile
+                        await api.write('/interface/wireless/security-profiles/set', [
+                            `=.id=${existingProfiles[0]['.id']}`,
+                            `=mode=dynamic-keys`,
+                            `=authentication-types=${config.securityMode === 'wpa2-psk' ? 'wpa2-psk' : 'wpa-psk,wpa2-psk'}`,
+                            `=wpa-pre-shared-key=${config.passphrase || ''}`,
+                            `=wpa2-pre-shared-key=${config.passphrase || ''}`
+                        ]);
+                    } else {
+                        // Create new profile
+                        await api.write('/interface/wireless/security-profiles/add', [
+                            `=name=${profileName}`,
+                            `=mode=dynamic-keys`,
+                            `=authentication-types=${config.securityMode === 'wpa2-psk' ? 'wpa2-psk' : 'wpa-psk,wpa2-psk'}`,
+                            `=wpa-pre-shared-key=${config.passphrase || ''}`,
+                            `=wpa2-pre-shared-key=${config.passphrase || ''}`
+                        ]);
+                    }
+
+                    params.push(`=security-profile=${profileName}`);
+                } catch (profileError) {
+                    logger.warn({ nasId: nas.id, profileError }, 'Failed to configure security profile');
+                }
+            } else if (config.securityMode === 'none') {
+                params.push('=security-profile=default');
+            }
+
+            // Apply wireless settings
+            await api.write('/interface/wireless/set', params);
+
+            logger.info({ nasId: nas.id, config }, 'Wireless interface configured');
+            return true;
+        } catch (error) {
+            logger.error({ nasId: nas.id, error }, 'Failed to configure wireless');
+            throw error;
+        }
+    }
+
+    // ==========================================
+    // FIRMWARE MANAGEMENT METHODS
+    // ==========================================
+
+    /**
+     * Get firmware and package information
+     */
+    async getFirmwareInfo(nas: NASInfo): Promise<FirmwareInfo> {
+        const api = await this.getConnection(nas);
+
+        try {
+            const [resource, packages] = await Promise.all([
+                api.write('/system/resource/print'),
+                api.write('/system/package/print'),
+            ]);
+
+            const currentVersion = resource[0]?.version || 'Unknown';
+
+            // Check for updates (RouterOS 7+)
+            let latestVersion: string | null = null;
+            let updateAvailable = false;
+            let channel = 'stable';
+
+            try {
+                const updateCheck = await api.write('/system/package/update/print');
+                if (updateCheck.length > 0) {
+                    latestVersion = updateCheck[0]['latest-version'] || null;
+                    updateAvailable = updateCheck[0].status === 'New version is available';
+                    channel = updateCheck[0].channel || 'stable';
+                }
+            } catch {
+                // Update check may not be available on older RouterOS
+            }
+
+            return {
+                currentVersion,
+                latestVersion,
+                updateAvailable,
+                channel,
+                packages: packages.map((pkg: any) => ({
+                    name: pkg.name || '',
+                    version: pkg.version || '',
+                    buildTime: pkg['build-time'] || '',
+                    scheduled: pkg.scheduled || null,
+                })),
+            };
+        } catch (error) {
+            logger.error({ nasId: nas.id, error }, 'Failed to get firmware info');
+            throw error;
+        }
+    }
+
+    /**
+     * Check for available firmware updates
+     */
+    async checkFirmwareUpdates(nas: NASInfo): Promise<{ available: boolean; currentVersion: string; latestVersion: string | null }> {
+        const api = await this.getConnection(nas);
+
+        try {
+            // Trigger update check
+            await api.write('/system/package/update/check-for-updates');
+
+            // Wait a moment for check to complete
+            await new Promise(resolve => setTimeout(resolve, 3000));
+
+            // Get result
+            const result = await api.write('/system/package/update/print');
+            const resource = await api.write('/system/resource/print');
+
+            const currentVersion = resource[0]?.version || 'Unknown';
+            const latestVersion = result[0]?.['latest-version'] || null;
+            const available = result[0]?.status === 'New version is available';
+
+            logger.info({ nasId: nas.id, currentVersion, latestVersion, available }, 'Firmware update check completed');
+
+            return { available, currentVersion, latestVersion };
+        } catch (error) {
+            logger.error({ nasId: nas.id, error }, 'Failed to check firmware updates');
+            throw error;
+        }
+    }
+
+    /**
+     * Download and install firmware update
+     * WARNING: This will reboot the router!
+     */
+    async updateFirmware(nas: NASInfo): Promise<{ success: boolean; message: string }> {
+        const api = await this.getConnection(nas);
+
+        try {
+            // First check if update is available
+            const updateInfo = await api.write('/system/package/update/print');
+            if (!updateInfo[0] || updateInfo[0].status !== 'New version is available') {
+                return { success: false, message: 'No update available' };
+            }
+
+            logger.info({ nasId: nas.id, version: updateInfo[0]['latest-version'] }, 'Starting firmware download...');
+
+            // Download the update
+            await api.write('/system/package/update/download');
+
+            // Wait for download to complete (poll status)
+            let attempts = 0;
+            const maxAttempts = 60; // 5 minutes max
+
+            while (attempts < maxAttempts) {
+                await new Promise(resolve => setTimeout(resolve, 5000));
+                attempts++;
+
+                const status = await api.write('/system/package/update/print');
+
+                if (status[0]?.status === 'Downloaded, please reboot to upgrade') {
+                    // Install the update (this reboots the router)
+                    logger.info({ nasId: nas.id }, 'Download complete, installing update...');
+
+                    try {
+                        await api.write('/system/package/update/install');
+                    } catch {
+                        // Connection will be lost during reboot
+                    }
+
+                    return { success: true, message: 'Update installed, router is rebooting' };
+                }
+
+                if (status[0]?.status?.includes('error') || status[0]?.status?.includes('failed')) {
+                    return { success: false, message: `Update failed: ${status[0].status}` };
+                }
+            }
+
+            return { success: false, message: 'Update download timed out' };
+        } catch (error) {
+            // Connection may be lost during reboot, which is expected
+            if ((error as Error).message?.includes('Socket closed') || (error as Error).message?.includes('Connection reset')) {
+                return { success: true, message: 'Update in progress, router is rebooting' };
+            }
+
+            logger.error({ nasId: nas.id, error }, 'Failed to update firmware');
+            throw error;
+        }
+    }
+
+    /**
+     * Fix Walled Garden configuration
+     * Removes CPD bypasses (Apple, Google) that prevent login popup
+     * Adds allow rules for Backend API and Fonts
+     * Configures RADIUS server
+     */
+    private async configureGoldenState(api: any, nas: any): Promise<void> {
+        try {
+            logger.info('Applying "Golden State" configuration...');
+
+            // ==========================================
+            // 1. Hotspot Profile Hardening
+            // ==========================================
+            try {
+                // Force correct login methods and RADIUS on all profiles
+                const profiles = await api.write('/ip/hotspot/profile/print');
+                for (const profile of profiles) {
+                    if (profile['.id']) {
+                        await api.write('/ip/hotspot/profile/set', [
+                            `=.id=${profile['.id']}`,
+                            `=login-by=http-pap,mac-cookie`, // HTTP PAP is robust for captive portal
+                            `=use-radius=yes`,
+                            `=radius-interim-update=5m`
+                        ]);
+                    }
+                }
+            } catch (e) {
+                logger.error({ error: e }, 'Failed to configure hotspot profile');
+            }
+
+            // ==========================================
+            // 2. Walled Garden "Strict Mode"
+            // ==========================================
+
+            // 1. Remove bad entries (Apple, Google, MSFT CPD)
+            const badComments = ['Apple CPD', 'Android CPD', 'Windows CPD'];
+            for (const comment of badComments) {
+                try {
+                    const entries = await api.write('/ip/hotspot/walled-garden/ip/print', [
+                        `?comment=${comment}`
+                    ]);
+                    for (const entry of entries) {
+                        if (entry['.id']) {
+                            await api.write('/ip/hotspot/walled-garden/ip/remove', [`=.id=${entry['.id']}`]);
+                        }
+                    }
+                } catch (e) { /* ignore if not found */ }
+            }
+
+            // 2. Ensure Backend & Fonts are allowed
+            const neededRules = [
+                { host: '113.30.190.52', comment: 'EasyISP Backend' },
+                { host: '113-30-190-52.cloud-xip.com', comment: 'EasyISP Backend' },
+                { host: 'fonts.googleapis.com', comment: 'Google Fonts' },
+                { host: 'fonts.gstatic.com', comment: 'Google Fonts' },
+            ];
+
+            for (const rule of neededRules) {
+                // Check if exists
+                try {
+                    // MikroTik print filters are usually strict
+                    const existing = await api.write('/ip/hotspot/walled-garden/ip/print', [
+                        `?dst-host=${rule.host}`
+                    ]);
+                    if (existing.length === 0) {
+                        await api.write('/ip/hotspot/walled-garden/ip/add', [
+                            `=dst-host=${rule.host}`,
+                            `=action=accept`,
+                            `=comment=${rule.comment}`
+                        ]);
+                    }
+                } catch (e) {
+                    logger.error({ error: e, rule }, 'Failed to check/add walled garden rule');
+                }
+            }
+
+            // ==========================================
+            // 3. RADIUS Server Configuration
+            // ==========================================
+            try {
+                // Check existing RADIUS configuration
+                const radiusServers = await api.write('/radius/print', ['?service=hotspot']);
+
+                // Remove old entries (simplest way to ensure correctness)
+                // In production, might be better to update if ID exists, but removal is cleaner here
+                for (const s of radiusServers) {
+                    if (s['.id']) {
+                        // Optionally check if it matches our config to avoid flapping,
+                        // but re-adding ensures secrets are synced.
+                        await api.write('/radius/remove', [`=.id=${s['.id']}`]);
+                    }
+                }
+
+                // Add Backend RADIUS Server
+                // STRICT VPN ONLY: As requested, we only use the VPN tunnel.
+                // The Backend is always at 10.10.0.1 inside the tunnel.
+
+                await api.write('/radius/add', [
+                    `=address=10.10.0.1`,
+                    `=secret=${nas.secret}`,
+                    `=service=hotspot`,
+                    `=authentication-port=1812`,
+                    `=accounting-port=1813`,
+                    `=timeout=1000ms`, // 1s timeout
+                    `=comment=EasyISP VPN`
+                ]);
+
+            } catch (e) {
+                logger.error({ error: e }, 'Failed to configure RADIUS server');
+            }
+
+            // ==========================================
+            // 4. Firewall Filter "Golden Rules"
+            // ==========================================
+            // We insert these at the TOP (index 0) to ensure they override anything else.
+
+            const filterRules = [
+                // [INPUT CHAIN]
+                {
+                    comment: 'EasyISP: Accept Established/Related',
+                    cmd: ['=chain=input', '=connection-state=established,related', '=action=accept']
+                },
+                {
+                    comment: 'EasyISP: Accept DNS (UDP)',
+                    cmd: ['=chain=input', '=protocol=udp', '=dst-port=53', '=action=accept']
+                },
+                {
+                    comment: 'EasyISP: Accept DNS (TCP)',
+                    cmd: ['=chain=input', '=protocol=tcp', '=dst-port=53', '=action=accept']
+                },
+                {
+                    comment: 'EasyISP: Accept Hotspot Web',
+                    cmd: ['=chain=input', '=protocol=tcp', '=dst-port=64872-64875', '=action=accept']
+                },
+                {
+                    comment: 'EasyISP: Accept VPN Input',
+                    cmd: ['=chain=input', '=in-interface=wg-easyisp', '=action=accept']
+                },
+
+                // [FORWARD CHAIN]
+                {
+                    comment: 'EasyISP: Accept Forward Established/Related',
+                    cmd: ['=chain=forward', '=connection-state=established,related', '=action=accept']
+                }
+            ];
+
+            // Insert rules at the top (place-before=0)
+            // We proceed in reverse order so the first one ends up at 0
+            for (let i = filterRules.length - 1; i >= 0; i--) {
+                const rule = filterRules[i];
+                const comment = rule.comment;
+                try {
+                    // Check if exists
+                    const existing = await api.write('/ip/firewall/filter/print', [`?comment=${comment}`]);
+
+                    if (existing.length > 0) {
+                        // If it exists, move it to top to be safe
+                        await api.write('/ip/firewall/filter/move', [
+                            `=.id=${existing[0]['.id']}`,
+                            `=destination=0`
+                        ]);
+                    } else {
+                        // Create at top
+                        await api.write('/ip/firewall/filter/add', [
+                            ...rule.cmd,
+                            `=comment=${comment}`,
+                            `=place-before=0`
+                        ]);
+                    }
+                } catch (e) {
+                    logger.error({ error: e, rule: comment }, 'Failed to apply firewall rule');
+                }
+            }
+
+            // ==========================================
+            // 4. NAT "Golden Rules"
+            // ==========================================
+            // Ensure Masquerade exists for WAN/VPN
+            try {
+                const natComment = 'EasyISP: Masquerade';
+                // Using template literal for comment query
+                const existingNat = await api.write('/ip/firewall/nat/print', [`?comment=${natComment}`]);
+
+                if (existingNat.length === 0) {
+                    await api.write('/ip/firewall/nat/add', [
+                        '=chain=srcnat',
+                        '=action=masquerade',
+                        `=comment=${natComment}`,
+                    ]);
+                }
+            } catch (e) {
+                logger.error({ error: e }, 'Failed to apply NAT rule');
+            }
+        } catch (error) {
+            logger.error({ error }, 'Failed to fix Walled Garden');
+            // Don't throw, as this is a maintenance task
+        }
+    }
+
     /**
      * Close all connections (for cleanup)
      */
@@ -926,3 +1595,4 @@ export class MikroTikService {
 
 // Export singleton instance
 export const mikrotikService = new MikroTikService();
+

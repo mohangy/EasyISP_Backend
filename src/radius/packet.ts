@@ -287,34 +287,97 @@ export function createRequest(
     randomAuth.copy(packet, 4);
     attributeBuffer.copy(packet, 20);
 
-    // Calculate Request Authenticator
-    // RequestAuth = MD5(Code + ID + Length + 16 zero octets + Attributes + Secret)
-    const hashInput = Buffer.alloc(length);
-    packet.copy(hashInput);
-    Buffer.alloc(16).copy(hashInput, 4); // Zero out authenticator position
+    // For Access-Request and Status-Server, Authenticator is random (already set)
+    // For Accounting-Request, CoA-Request, Disconnect-Request, it must be the MD5 hash
+    if (code !== RadiusCode.ACCESS_REQUEST && code !== RadiusCode.STATUS_SERVER) {
+        // Calculate Request Authenticator
+        // RequestAuth = MD5(Code + ID + Length + 16 zero octets + Attributes + Secret)
+        const hashInput = Buffer.alloc(length);
+        packet.copy(hashInput);
+        Buffer.alloc(16).copy(hashInput, 4); // Zero out authenticator position
 
-    const hash = createHash('md5');
-    hash.update(hashInput);
-    hash.update(Buffer.from(secret));
-    const requestAuth = hash.digest();
-    requestAuth.copy(packet, 4);
+        const hash = createHash('md5');
+        hash.update(hashInput);
+        hash.update(Buffer.from(secret));
+        const requestAuth = hash.digest();
+        requestAuth.copy(packet, 4);
+    }
 
     return packet;
 }
 
 /**
- * Verify request authenticator for Access-Request (PAP)
+ * Verify request authenticator for Access-Request
+ * If Message-Authenticator (Type 80) is present, it MUST be verified.
  */
 export function verifyRequestAuthenticator(packet: RadiusPacket, secret: string): boolean {
-    // For Access-Request, authenticator is random (no verification needed)
-    // Verification is done via User-Password decryption
+    const msgAuth = getAttribute(packet, RadiusAttributeType.MESSAGE_AUTHENTICATOR);
+
+    // If Message-Authenticator attribute exists, verify HMAC-MD5
+    if (msgAuth) {
+        return verifyMessageAuthenticator(packet, secret);
+    }
+
+    // Otherwise, we accept it (Access-Request authenticator is mostly random/unverifiable 
+    // without Message-Authenticator, though servers *use* it to encrypt the response)
     return true;
+}
+
+/**
+ * Verify Message-Authenticator (Type 80)
+ * Calculated as HMAC-MD5 of the entire packet with the Message-Authenticator field zeroed
+ */
+export function verifyMessageAuthenticator(packet: RadiusPacket, secret: string): boolean {
+    const msgAuthAttr = getAttribute(packet, RadiusAttributeType.MESSAGE_AUTHENTICATOR);
+    if (!msgAuthAttr || !Buffer.isBuffer(msgAuthAttr.value)) return false;
+
+    const receivedHmac = msgAuthAttr.value;
+
+    // Create a copy of the packet raw buffer to zero out the Message-Authenticator value
+    // We need to find where the Message-Authenticator value is in the raw buffer
+    // Type(1) + Length(1) + Value(16)
+    // We scan the attributes to find the offset
+    const calcBuffer = Buffer.from(packet.raw);
+
+    // Re-locate the attribute in the raw buffer to zero it out
+    // Since we parsed it, we know it exists. We need to find its offset.
+    // The simplest way is to re-construct the packet for calculation if we trust our encode,
+    // but better to use the raw buffer and zero out the specific bytes.
+    // However, finding the specific offset in `raw` can be tricky if there are multiple similar attributes.
+    // RFC says: "calculated over the stream ... with the Message-Authenticator Attribute value field set to zero"
+
+    // Let's iterate attributes in the raw buffer again to find the offset
+    let offset = 20; // Skip header
+    while (offset < calcBuffer.length) {
+        const type = calcBuffer.readUInt8(offset);
+        const len = calcBuffer.readUInt8(offset + 1);
+
+        if (type === RadiusAttributeType.MESSAGE_AUTHENTICATOR) {
+            // Zero out the 16-byte value (offset + 2)
+            calcBuffer.fill(0, offset + 2, offset + len);
+            break;
+        }
+        offset += len;
+    }
+
+    const hmac = createHmac('md5', secret);
+    hmac.update(calcBuffer);
+    const expectedHmac = hmac.digest();
+
+    return expectedHmac.equals(receivedHmac);
 }
 
 /**
  * Verify accounting request authenticator
  */
 export function verifyAccountingAuthenticator(packet: RadiusPacket, secret: string): boolean {
+    // First, if Message-Authenticator is present, it MUST be valid
+    const msgAuth = getAttribute(packet, RadiusAttributeType.MESSAGE_AUTHENTICATOR);
+    if (msgAuth && !verifyMessageAuthenticator(packet, secret)) {
+        return false;
+    }
+
+    // Then verify the Accounting-Request Authenticator
     // Authenticator = MD5(Code + ID + Length + 16 zero octets + Attributes + Secret)
     const testPacket = Buffer.from(packet.raw);
     Buffer.alloc(16).copy(testPacket, 4); // Zero out authenticator

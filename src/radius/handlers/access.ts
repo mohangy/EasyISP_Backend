@@ -188,6 +188,17 @@ async function authenticateUser(
         return reject('Account expired. Please renew your subscription.');
     }
 
+    // Check MAC Address Lock for Hotspot
+    if (customer.connectionType === 'HOTSPOT' && customer.lastMac) {
+        const reqMac = context.callingStationId?.replace(/[^A-Fa-f0-9]/g, '').toUpperCase();
+        const lockedMac = customer.lastMac.replace(/[^A-Fa-f0-9]/g, '').toUpperCase();
+
+        if (reqMac && lockedMac && reqMac !== lockedMac) {
+            logger.warn({ username: context.username, reqMac, lockedMac }, 'MAC Address mismatch for locked account');
+            return reject('This voucher is locked to another device');
+        }
+    }
+
     // Build Accept response with attributes
     const attributes: AttributeBuilder[] = [];
 

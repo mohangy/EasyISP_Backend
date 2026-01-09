@@ -5,9 +5,87 @@ import { authMiddleware } from '../middleware/auth.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { createAuditLog } from '../lib/audit.js';
 import { logger } from '../lib/logger.js';
-import { randomBytes } from 'crypto';
+import { execSync } from 'child_process';
 
 export const vpnRoutes = new Hono();
+
+// WireGuard interface name from environment
+const WG_INTERFACE = process.env['WG_INTERFACE'] ?? 'wg0';
+
+/**
+ * Generate WireGuard keypair using actual wg commands
+ */
+function generateWireGuardKeys(): { privateKey: string; publicKey: string } {
+    try {
+        const privateKey = execSync('wg genkey').toString().trim();
+        const publicKey = execSync(`echo "${privateKey}" | wg pubkey`).toString().trim();
+        return { privateKey, publicKey };
+    } catch (error) {
+        logger.error({ error }, 'Failed to generate WireGuard keys');
+        throw new Error('Failed to generate VPN keys. Is WireGuard installed?');
+    }
+}
+
+/**
+ * Add peer to WireGuard server
+ */
+function addPeerToServer(publicKey: string, allowedIps: string): boolean {
+    try {
+        execSync(`sudo wg set ${WG_INTERFACE} peer ${publicKey} allowed-ips ${allowedIps}`);
+        logger.info({ publicKey, allowedIps }, 'Added WireGuard peer to server');
+        return true;
+    } catch (error) {
+        logger.error({ error, publicKey }, 'Failed to add WireGuard peer to server');
+        return false;
+    }
+}
+
+/**
+ * Remove peer from WireGuard server
+ */
+function removePeerFromServer(publicKey: string): boolean {
+    try {
+        execSync(`sudo wg set ${WG_INTERFACE} peer ${publicKey} remove`);
+        logger.info({ publicKey }, 'Removed WireGuard peer from server');
+        return true;
+    } catch (error) {
+        logger.error({ error, publicKey }, 'Failed to remove WireGuard peer from server');
+        return false;
+    }
+}
+
+/**
+ * Get peer statistics from WireGuard server
+ */
+export function getServerPeerStats(): Map<string, { lastHandshake: Date | null; rxBytes: bigint; txBytes: bigint }> {
+    const stats = new Map<string, { lastHandshake: Date | null; rxBytes: bigint; txBytes: bigint }>();
+
+    try {
+        const output = execSync(`wg show ${WG_INTERFACE} dump`).toString();
+        const lines = output.trim().split('\n');
+
+        // Skip first line (interface info), parse peer lines
+        for (let i = 1; i < lines.length; i++) {
+            const parts = lines[i].split('\t');
+            if (parts.length >= 8) {
+                const publicKey = parts[0];
+                const lastHandshakeEpoch = parseInt(parts[4] || '0');
+                const rxBytes = BigInt(parts[5] || '0');
+                const txBytes = BigInt(parts[6] || '0');
+
+                stats.set(publicKey, {
+                    lastHandshake: lastHandshakeEpoch > 0 ? new Date(lastHandshakeEpoch * 1000) : null,
+                    rxBytes,
+                    txBytes,
+                });
+            }
+        }
+    } catch (error) {
+        logger.error({ error }, 'Failed to get WireGuard peer stats');
+    }
+
+    return stats;
+}
 
 // Apply auth middleware to all routes
 vpnRoutes.use('*', authMiddleware);
@@ -97,19 +175,38 @@ vpnRoutes.post('/peers', async (c) => {
     const body = await c.req.json();
     const data = createPeerSchema.parse(body);
 
-    // Generate keypair (in production, use actual WG keygen)
-    const privateKey = randomBytes(32).toString('base64');
-    const publicKey = randomBytes(32).toString('base64'); // Would be derived from private
+    // Generate keypair using actual WireGuard commands
+    const { privateKey, publicKey } = generateWireGuardKeys();
 
-    // Assign IP from pool
-    const existingCount = await prisma.vPNPeer.count({ where: { tenantId } });
-    const assignedIp = `10.10.${Math.floor(existingCount / 254)}.${(existingCount % 254) + 2}/32`;
+    // Assign IP from pool (improved allocation that checks for gaps)
+    const existingPeers = await prisma.vPNPeer.findMany({
+        where: { tenantId },
+        select: { assignedIp: true },
+    });
+
+    const usedIps = new Set(existingPeers.map(p => p.assignedIp.split('/')[0]));
+    let assignedIp = '';
+
+    // Find first available IP in 10.10.x.x range (skip .1 which is server)
+    outer: for (let i = 0; i <= 255; i++) {
+        for (let j = 2; j <= 254; j++) {
+            const ip = `10.10.${i}.${j}`;
+            if (!usedIps.has(ip)) {
+                assignedIp = `${ip}/32`;
+                break outer;
+            }
+        }
+    }
+
+    if (!assignedIp) {
+        throw new AppError(503, 'No available VPN IPs in pool');
+    }
 
     const peer = await prisma.vPNPeer.create({
         data: {
             name: data.name,
             publicKey,
-            privateKey, // Would be encrypted in production
+            privateKey, // TODO: Encrypt with VPN_KEY_SECRET
             allowedIps: data.allowedIps ?? '0.0.0.0/0',
             assignedIp,
             persistentKeepalive: data.persistentKeepalive ?? 25,
@@ -118,6 +215,12 @@ vpnRoutes.post('/peers', async (c) => {
             tenantId,
         },
     });
+
+    // Add peer to WireGuard server
+    const serverSynced = addPeerToServer(publicKey, assignedIp);
+    if (!serverSynced) {
+        logger.warn({ peerId: peer.id }, 'Peer created in DB but failed to sync to WireGuard server');
+    }
 
     // Audit log
     await createAuditLog({
@@ -152,6 +255,7 @@ PersistentKeepalive = ${data.persistentKeepalive}
             publicKey: peer.publicKey,
             assignedIp: peer.assignedIp,
             config: clientConfig,
+            serverSynced,
         },
         201
     );
@@ -171,6 +275,12 @@ vpnRoutes.delete('/peers/:id', async (c) => {
         throw new AppError(404, 'VPN peer not found');
     }
 
+    // Remove from WireGuard server first
+    const serverSynced = removePeerFromServer(peer.publicKey);
+    if (!serverSynced) {
+        logger.warn({ peerId: peer.id }, 'Failed to remove peer from WireGuard server, continuing with DB delete');
+    }
+
     await prisma.vPNPeer.delete({ where: { id: peerId } });
 
     // Audit log
@@ -182,9 +292,7 @@ vpnRoutes.delete('/peers/:id', async (c) => {
         user,
     });
 
-    // TODO: Remove from WireGuard server config
-
-    return c.json({ success: true });
+    return c.json({ success: true, serverSynced });
 });
 
 // GET /api/vpn/peers/:id/config - Get peer config file
@@ -255,5 +363,128 @@ vpnRoutes.put('/peers/:id/toggle', async (c) => {
     return c.json({
         success: true,
         status: newStatus.toLowerCase(),
+    });
+});
+
+// POST /api/vpn/sync-stats - Sync peer statistics from WireGuard server
+vpnRoutes.post('/sync-stats', async (c) => {
+    const tenantId = c.get('tenantId');
+
+    // Get all peers for this tenant
+    const peers = await prisma.vPNPeer.findMany({
+        where: { tenantId },
+        select: { id: true, publicKey: true },
+    });
+
+    // Get stats from WireGuard server
+    const serverStats = getServerPeerStats();
+
+    let updated = 0;
+
+    for (const peer of peers) {
+        const stats = serverStats.get(peer.publicKey);
+        if (stats) {
+            await prisma.vPNPeer.update({
+                where: { id: peer.id },
+                data: {
+                    lastHandshake: stats.lastHandshake,
+                    bytesReceived: stats.rxBytes,
+                    bytesSent: stats.txBytes,
+                },
+            });
+            updated++;
+        }
+    }
+
+    return c.json({
+        success: true,
+        peersChecked: peers.length,
+        peersUpdated: updated,
+    });
+});
+
+// =============================================
+// Router VPN Status Endpoints
+// =============================================
+
+import {
+    getAllNasVpnStatuses,
+    getNasVpnStatus,
+    syncAllNasStatuses,
+    formatDuration
+} from '../services/vpn-status.service.js';
+
+// GET /api/vpn/routers/status - Get all router VPN statuses
+vpnRoutes.get('/routers/status', async (c) => {
+    const tenantId = c.get('tenantId');
+
+    const statuses = await getAllNasVpnStatuses(tenantId);
+
+    return c.json({
+        routers: statuses.map(s => ({
+            id: s.nasId,
+            name: s.nasName,
+            vpnIp: s.vpnIp,
+            status: s.status,
+            isConnected: s.isConnected,
+            lastHandshake: s.lastHandshake,
+            uptime: s.uptime,
+            offlineDuration: s.offlineDuration,
+            lastSeen: s.lastSeen,
+            bytesReceived: s.bytesReceived.toString(),
+            bytesSent: s.bytesSent.toString(),
+        })),
+        summary: {
+            total: statuses.length,
+            online: statuses.filter(s => s.isConnected).length,
+            offline: statuses.filter(s => !s.isConnected && s.status !== 'PENDING').length,
+            pending: statuses.filter(s => s.status === 'PENDING').length,
+        },
+    });
+});
+
+// GET /api/vpn/routers/:id/status - Get single router VPN status
+vpnRoutes.get('/routers/:id/status', async (c) => {
+    const tenantId = c.get('tenantId');
+    const nasId = c.req.param('id');
+
+    // Verify NAS belongs to tenant
+    const nas = await prisma.nAS.findFirst({
+        where: { id: nasId, tenantId },
+        select: { id: true },
+    });
+
+    if (!nas) {
+        throw new AppError(404, 'Router not found');
+    }
+
+    const status = await getNasVpnStatus(nasId);
+
+    if (!status) {
+        throw new AppError(404, 'Router VPN not configured');
+    }
+
+    return c.json({
+        id: status.nasId,
+        name: status.nasName,
+        vpnIp: status.vpnIp,
+        status: status.status,
+        isConnected: status.isConnected,
+        lastHandshake: status.lastHandshake,
+        uptime: status.uptime,
+        offlineDuration: status.offlineDuration,
+        lastSeen: status.lastSeen,
+        bytesReceived: status.bytesReceived.toString(),
+        bytesSent: status.bytesSent.toString(),
+    });
+});
+
+// POST /api/vpn/routers/sync - Manually trigger status sync for all routers
+vpnRoutes.post('/routers/sync', async (c) => {
+    const result = await syncAllNasStatuses();
+
+    return c.json({
+        success: true,
+        ...result,
     });
 });

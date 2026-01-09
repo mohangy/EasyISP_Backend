@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WiFi Logout</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1 class="company-name">You are Logged Out</h1>
+        </header>
+
+        <div class="section" style="text-align: center;">
+            <div class="success-icon" style="background-color: #64748b; color: white;">👋</div>
+            <h2>Session Ended</h2>
+            <p>You have successfully disconnected from the hotspot.</p>
+            
+            <div class="credentials-box">
+                <p><strong>Username:</strong> $(username)</p>
+                <p><strong>Uptime:</strong> $(uptime)</p>
+                <p><strong>Data Used:</strong> $(bytes-out-nice) / $(bytes-in-nice)</p>
+            </div>
+
+            <form action="$(link-login)" name="login" onSubmit="return openLogin()">
+                <button type="submit" class="btn btn-primary btn-large">Log In Again</button>
+            </form>
+        </div>
+    </div>
+</body>
+</html>

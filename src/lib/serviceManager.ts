@@ -1,7 +1,8 @@
 import { prisma } from './prisma.js';
 import { queue } from './queue.js';
-import { radiusService } from '../services/radius.service.js';
+import { radiusServer } from '../radius/index.js';
 import { logger } from './logger.js';
+import { startVpnStatusMonitor, stopVpnStatusMonitor } from '../services/vpn-status.service.js';
 
 class ServiceManager {
     async startAll() {
@@ -10,7 +11,8 @@ class ServiceManager {
         const services = [
             { name: 'Database', start: () => prisma.$connect() },
             { name: 'Queue System', start: () => queue.start() },
-            { name: 'RADIUS Auth', start: () => radiusService.start() },
+            { name: 'RADIUS Auth', start: () => radiusServer.start() },
+            { name: 'VPN Monitor', start: () => { startVpnStatusMonitor(); return Promise.resolve(); } },
         ];
 
         const results = [];
@@ -39,7 +41,8 @@ class ServiceManager {
 
     async stopAll() {
         logger.info('Stopping all services...');
-        await radiusService.stop();
+        stopVpnStatusMonitor();
+        await radiusServer.stop();
         await queue.stop();
         await prisma.$disconnect();
         logger.info('All services stopped');
@@ -47,3 +50,4 @@ class ServiceManager {
 }
 
 export const serviceManager = new ServiceManager();
+

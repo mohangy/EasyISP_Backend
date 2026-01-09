@@ -18,13 +18,15 @@ const urlParams = new URLSearchParams(window.location.search);
 const EASYISP_SERVER = '__EASYISP_API_URL__';
 const detectedApiUrl = EASYISP_SERVER + '/api';
 
+const GLOBAL_CONFIG = window.EASYISP_CONFIG || {};
+
 const CONFIG = {
-    // API base URL - can be overridden via ?apiUrl= query param
-    apiBaseUrl: urlParams.get('apiUrl') || detectedApiUrl,
+    // API base URL - can be overridden via ?apiUrl= query param or global config
+    apiBaseUrl: urlParams.get('apiUrl') || GLOBAL_CONFIG.apiBaseUrl || detectedApiUrl,
 
     // Tenant ID - __TENANT_ID__ is replaced by backend at serve time
-    // Can also be overridden via ?tenantId= query param
-    tenantId: urlParams.get('tenantId') || '__TENANT_ID__',
+    // Can also be overridden via ?tenantId= query param or global config
+    tenantId: urlParams.get('tenantId') || GLOBAL_CONFIG.tenantId || '__TENANT_ID__',
 
     // Portal parameters from MikroTik (will be extracted from URL or page)
     macAddress: urlParams.get('mac') || '',
@@ -630,6 +632,7 @@ function showSuccess(username, password) {
     state.credentials = { username, password };
 
     showModalSection('success');
+    elements.phoneModal.classList.add('active'); // Ensure modal is visible
 }
 
 function submitLogin() {

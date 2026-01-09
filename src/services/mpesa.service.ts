@@ -602,7 +602,8 @@ export async function createHotspotCustomerFromPayment(
     transactionCode: string,
     phone: string,
     packageId: string,
-    amount: number
+    amount: number,
+    macAddress?: string
 ): Promise<{ customerId: string; username: string; password: string; expiresAt: Date }> {
     // Get the package details
     const pkg = await prisma.package.findFirst({
@@ -630,6 +631,7 @@ export async function createHotspotCustomerFromPayment(
             packageId: pkg.id,
             tenantId: tenantId,
             expiresAt: expiresAt,
+            lastMac: macAddress ? macAddress.toUpperCase().replace(/[:-]/g, ':') : undefined, // MAC Lock
         },
     });
 

@@ -125,6 +125,24 @@ customerRoutes.get('/:id', async (c) => {
         throw new AppError(404, 'Customer not found');
     }
 
+    // Fetch last session for additional context (IP, MAC, accounting start)
+    const lastSession = await prisma.session.findFirst({
+        where: { customerId },
+        orderBy: { startTime: 'desc' },
+        include: {
+            nas: { select: { id: true, name: true } }
+        }
+    });
+
+    // Check if there's an active session (for online status)
+    const activeSession = await prisma.session.findFirst({
+        where: { customerId, stopTime: null },
+        orderBy: { startTime: 'desc' },
+    });
+
+    // Determine NAS info - prefer customer's assigned NAS, fall back to last session's NAS
+    const nasInfo = customer.nas || lastSession?.nas || null;
+
     // Convert BigInt/Decimal values to Numbers for JSON serialization
     return c.json({
         id: customer.id,
@@ -140,8 +158,19 @@ customerRoutes.get('/:id', async (c) => {
         longitude: customer.longitude,
         apartmentNumber: customer.apartmentNumber,
         houseNumber: customer.houseNumber,
+        // Session/Network info
+        isOnline: !!activeSession,
+        ipAddress: activeSession?.framedIp || lastSession?.framedIp || customer.lastIp,
+        macAddress: activeSession?.macAddress || lastSession?.macAddress || customer.lastMac,
         lastIp: customer.lastIp,
         lastMac: customer.lastMac,
+        // Accounting
+        accountingStartTime: activeSession?.startTime || lastSession?.startTime,
+        dataUsed: Number(lastSession?.inputOctets || 0) + Number(lastSession?.outputOctets || 0),
+        // NAS info
+        nasId: nasInfo?.id || lastSession?.nasId,
+        nas: nasInfo,
+        // Financials
         walletBalance: Number(customer.walletBalance),
         totalSpent: Number(customer.totalSpent),
         package: customer.package ? {
@@ -150,7 +179,7 @@ customerRoutes.get('/:id', async (c) => {
             sessionTime: customer.package.sessionTime ? Number(customer.package.sessionTime) : null,
             dataLimit: customer.package.dataLimit ? Number(customer.package.dataLimit) : null,
         } : null,
-        router: customer.nas,
+        router: nasInfo,
         createdAt: customer.createdAt,
     });
 });

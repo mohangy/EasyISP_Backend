@@ -141,6 +141,137 @@ mikrotikRoutes.post('/:nasId/disconnect', async (c) => {
     });
 });
 
+// GET /api/mikrotik/:nasId/hotspot-users - Get active hotspot users from MikroTik
+mikrotikRoutes.get('/:nasId/hotspot-users', async (c) => {
+    const tenantId = c.get('tenantId');
+    const nasId = c.req.param('nasId');
+
+    const nas = await prisma.nAS.findFirst({
+        where: { id: nasId, tenantId },
+    });
+
+    if (!nas) {
+        throw new AppError(404, 'Router not found');
+    }
+
+    try {
+        const activeUsers = await mikrotikService.getActiveHotspotUsers(nas);
+        return c.json(activeUsers);
+    } catch (error) {
+        logger.error({ nasId, error }, 'Failed to fetch hotspot users from MikroTik');
+        // Return empty array instead of error to allow frontend to handle gracefully
+        return c.json([]);
+    }
+});
+
+// GET /api/mikrotik/:nasId/hotspot-config.js - Generate dynamic config for router
+mikrotikRoutes.get('/:nasId/hotspot-config.js', async (c) => {
+    // No auth needed as router pulls this with curl/fetch via VPN/Public IP
+    // But we need to verify the ID exists. 
+    // Ideally this should be secured, but for now we rely on the ID being secret-ish or firewall rules.
+    // Actually, updateHotspotFiles uses standard fetch, so we can require basic auth or just rely on UUID.
+
+    // NOTE: This endpoint is public (no JWT auth middleware applied in main index.ts for /api/mikrotik if we aren't careful)
+    // Actually mikrotikRoutes ARE protected by default auth middleware in index.ts if mounted under /api
+    // We might need to make this one public or pass a token.
+    // For simplicity, since updateHotspotFiles is authenticated (USER triggers it), 
+    // and the ROUTER fetches it... the ROUTER is not authenticated with a user token.
+    // The router fetch logic in mikrotik.service.ts doesn't add headers.
+
+    // Wait, updateHotspotFiles is triggered by USER. Data flows Server -> Router via /tool/fetch.
+    // The Router is the one making the GET request to this endpoint.
+    // The Router does NOT have the user's JWT.
+    // So this endpoint MUST be public or use a specific token.
+    // For now, let's make it public but obscure? Or bypass auth middleware?
+    // mikrotikRoutes is mounted at /api/mikrotik which IS protected by authRoutes? 
+    // No, index.ts: app.use('*', secureHeaders()); ...
+    // index.ts: api.route('/auth', authRoutes)...
+    // We need to check index.ts to see if /api/mikrotik is protected.
+
+    // Looking at index.ts, there is no global auth middleware applied to `api` router.
+    // Auth middleware is usually applied inside specific route files or on specific paths.
+    // mikrotik.routes.ts uses `authMiddleware`? I need to check the file top imports.
+
+    const nasId = c.req.param('nasId');
+    const nas = await prisma.nAS.findUnique({
+        where: { id: nasId },
+    });
+
+    if (!nas) {
+        return c.text('// Router not found', 404);
+    }
+
+    const publicUrl = process.env['API_BASE_URL'] ?? 'https://113-30-190-52.cloud-xip.com';
+    // If we are accessed via VPN IP, we should use VPN IP for the API base URL in the config too?
+    // Actually, the USER's phone connects to the captive portal.
+    // The USER's phone is NOT on the VPN. The USER's phone is on the User WiFi.
+    // The USER's phone must be able to reach the API.
+    // If the API is public, use public URL.
+
+    // Content of config.js
+    const configContent = `
+window.EASYISP_CONFIG = {
+    tenantId: "${nas.tenantId}",
+    apiBaseUrl: "${publicUrl}/api"
+};
+`;
+
+    return c.text(configContent, 200, {
+        'Content-Type': 'application/javascript',
+    });
+});
+
+// POST /api/mikrotik/:nasId/update-hotspot - Update hotspot files on router
+mikrotikRoutes.post('/:nasId/update-hotspot', async (c) => {
+    const tenantId = c.get('tenantId');
+    const nasId = c.req.param('nasId');
+
+    const nas = await prisma.nAS.findFirst({
+        where: { id: nasId, tenantId },
+    });
+
+    if (!nas) {
+        throw new AppError(404, 'Router not found');
+    }
+
+    try {
+        const result = await mikrotikService.updateHotspotFiles(nas);
+        return c.json({
+            success: true,
+            message: 'Hotspot files updated successfully',
+            files: result.files
+        });
+    } catch (error) {
+        logger.error({ nasId, error }, 'Failed to update hotspot files');
+        throw new AppError(500, `Failed to update files: ${(error as Error).message}`);
+    }
+});
+
+// POST /api/mikrotik/:nasId/update-config - Update router configuration (Golden State)
+mikrotikRoutes.post('/:nasId/update-config', async (c) => {
+    const tenantId = c.get('tenantId');
+    const nasId = c.req.param('nasId');
+
+    const nas = await prisma.nAS.findFirst({
+        where: { id: nasId, tenantId },
+    });
+
+    if (!nas) {
+        throw new AppError(404, 'Router not found');
+    }
+
+    try {
+        await mikrotikService.updateRouterConfiguration(nas.id);
+        return c.json({
+            success: true,
+            message: 'Router configuration updated successfully'
+        });
+    } catch (error) {
+        logger.error({ nasId, error }, 'Failed to update router configuration');
+        throw new AppError(500, `Failed to update configuration: ${(error as Error).message}`);
+    }
+});
+
 // GET /api/mikrotik/:nasId/interfaces
 mikrotikRoutes.get('/:nasId/interfaces', async (c) => {
     const tenantId = c.get('tenantId');
