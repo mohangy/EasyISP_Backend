@@ -93,6 +93,11 @@ const tokenCache: Map<string, { token: string; expiresAt: number }> = new Map();
 
 /**
  * Get M-Pesa config for a tenant
+ * 
+ * AGGREGATOR MODEL:
+ * - Central credentials (consumerKey, consumerSecret, passkey) from .env
+ * - Tenant provides destination (shortcode = their Paybill/Till/Bank, accountNumber for bank)
+ * - storeNumber from .env is the authorized shortcode for API calls
  */
 export async function getTenantMpesaConfig(tenantId: string, purpose?: 'HOTSPOT' | 'PPPOE'): Promise<MpesaConfig | null> {
     const tenant = await prisma.tenant.findUnique({
@@ -118,19 +123,42 @@ export async function getTenantMpesaConfig(tenantId: string, purpose?: 'HOTSPOT'
         });
     }
 
-    if (!gateway || !gateway.consumerKey || !gateway.consumerSecret || !gateway.shortcode) {
+    // Tenant must at least have a destination shortcode (their Paybill/Till/Bank)
+    if (!gateway || !gateway.shortcode) {
+        return null;
+    }
+
+    // Get central credentials from environment (aggregator model)
+    const centralConsumerKey = config.mpesa.consumerKey;
+    const centralConsumerSecret = config.mpesa.consumerSecret;
+    const centralPasskey = config.mpesa.passkey;
+    const centralStoreNumber = config.mpesa.shortcode; // Your authorized shortcode
+    const centralCallbackUrl = config.mpesa.callbackUrl;
+
+    // Use tenant's credentials if provided, otherwise fallback to central
+    const consumerKey = gateway.consumerKey || centralConsumerKey;
+    const consumerSecret = gateway.consumerSecret || centralConsumerSecret;
+    const passkey = gateway.passkey || centralPasskey;
+
+    // For BANK/BUYGOODS: storeNumber is YOUR shortcode (has API access)
+    // If tenant doesn't have their own API access, use central storeNumber
+    const storeNumber = gateway.storeNumber || (gateway.consumerKey ? undefined : centralStoreNumber);
+
+    // Must have credentials (either tenant's or central)
+    if (!consumerKey || !consumerSecret) {
+        logger.warn({ tenantId }, 'M-Pesa: No credentials available (tenant or central)');
         return null;
     }
 
     return {
         subType: (gateway.subType as 'PAYBILL' | 'BUYGOODS' | 'BANK') || 'PAYBILL',
-        consumerKey: gateway.consumerKey,
-        consumerSecret: gateway.consumerSecret,
-        shortcode: gateway.shortcode,
-        storeNumber: gateway.storeNumber || undefined,
-        accountNumber: gateway.accountNumber || undefined,
-        passkey: gateway.passkey || '',
-        callbackUrl: (tenant as any)?.mpesaCallbackUrl || config.mpesa.callbackUrl || '',
+        consumerKey,
+        consumerSecret,
+        shortcode: gateway.shortcode,  // Tenant's destination (Paybill/Till/Bank)
+        storeNumber: storeNumber || undefined,  // Authorized shortcode for API (may be central)
+        accountNumber: gateway.accountNumber || undefined,  // For BANK: tenant's bank account
+        passkey: passkey || '',
+        callbackUrl: (tenant as any)?.mpesaCallbackUrl || centralCallbackUrl || '',
         env: (gateway.env as 'sandbox' | 'production') || 'production',
     };
 }
