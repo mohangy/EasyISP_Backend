@@ -15,8 +15,11 @@
 const urlParams = new URLSearchParams(window.location.search);
 
 // Backend API URL - __EASYISP_API_URL__ is replaced by the backend at serve time
+// If placeholder not replaced (static serving), use current origin
 const EASYISP_SERVER = '__EASYISP_API_URL__';
-const detectedApiUrl = EASYISP_SERVER + '/api';
+const detectedApiUrl = EASYISP_SERVER.startsWith('__')
+    ? window.location.origin + '/api'  // Fallback for static serving
+    : EASYISP_SERVER + '/api';
 
 const GLOBAL_CONFIG = window.EASYISP_CONFIG || {};
 
